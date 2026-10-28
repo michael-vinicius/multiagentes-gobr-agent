@@ -76,9 +76,12 @@ def join_multiline_clauses(lines: List[str]) -> List[str]:
     if buf:
         out.append(buf)
     # Some fallback expressions are wrapped onto a continuation line starting with 'ou'.
+    # Preference options may also continue on lines starting with 'e' ("preferencia nos dias uteis / e no sabado");
+    # without this merge they would be misread as extra conditions.
     merged = []
     for item in out:
-        if canon(item).startswith('ou ') and merged:
+        c = canon(item)
+        if merged and (c.startswith('ou ') or (c.startswith('e ') and canon(merged[-1]).startswith('preferencia'))):
             merged[-1] = merged[-1] + ' ' + item
         else:
             merged.append(item)
@@ -222,10 +225,8 @@ def humanize_frequency(rest: str) -> str:
     c = canon(r)
     m = re.fullmatch(r'de (\d+) dias?', c)
     if m:
-        return f'atender a cada {m.group(1)} dias'
-    m = re.fullmatch(r'de (\d+) dia', c)
-    if m:
-        return f'atender a cada {m.group(1)} dia'
+        n = int(m.group(1))
+        return f'atender a cada {n} dia' + ('s' if n != 1 else '')
     if c in FREQ_FIXED:
         return f'atender {FREQ_FIXED[c]}'
     # pivot-date variants
@@ -375,15 +376,9 @@ def build_record(file_name: str, idx: int, block: Dict) -> Dict:
     else:
         base += ' A parametrização não contém uma ação operacional reconhecida pelo gerador; revisar o bloco original.'
 
-    # A shorter embedding-friendly explanation.
-    pieces = []
-    if cond_texts:
-        pieces.append('Clientes ' + '; e '.join(cond_texts))
-    else:
-        pieces.append(subject.capitalize())
-    if action_texts:
-        pieces.append('devem ' + '; '.join(action_texts))
-    short = '. '.join(pieces).rstrip('.') + '.'
+    # A shorter embedding-friendly explanation: "<who>: <actions>."
+    who = 'Clientes ' + '; e '.join(cond_texts) if cond_texts else subject[:1].upper() + subject[1:]
+    short = f'{who}: ' + '; '.join(action_texts) + '.' if action_texts else f'{who}.'
 
     raw_block = block['raw_header'] + '\n' + '\n'.join(x.rstrip() for x in block['raw_lines'])
     problems = []
@@ -397,7 +392,8 @@ def build_record(file_name: str, idx: int, block: Dict) -> Dict:
         problems.append('há cláusulas não classificadas automaticamente')
     status = 'revisao_necessaria' if problems else 'ok'
     embedding_text = f"{block['name']}. {short}"
-    if target_texts:
+    # without conditions the short text already starts with the target
+    if target_texts and cond_texts:
         embedding_text += ' Alvo: ' + '; '.join(target_texts) + '.'
 
     return {
@@ -420,32 +416,43 @@ def build_record(file_name: str, idx: int, block: Dict) -> Dict:
     }
 
 
-def generate(input_dir: Path, out_jsonl: Path, out_md: Path) -> Tuple[int, int, int]:
+def build_records(input_dir: Path) -> Tuple[List[Dict], int]:
     records = []
-    file_count = 0
-    unclassified_count = 0
-    for f in sorted(input_dir.glob('*.gobr')):
-        file_count += 1
+    files = sorted(input_dir.glob('*.gobr'))
+    for f in files:
         text = f.read_text(encoding='utf-8', errors='replace')
-        blocks = parse_blocks(text)
-        pidx = 0
-        for b in blocks:
-            if b['type'] != 'parametros':
-                continue
-            pidx += 1
-            rec = build_record(f.name, pidx, b)
-            unclassified_count += len(rec['clausulas_nao_classificadas'])
-            records.append(rec)
+        blocks = [b for b in parse_blocks(text) if b['type'] == 'parametros']
+        for pidx, b in enumerate(blocks, 1):
+            records.append(build_record(f.name, pidx, b))
+    return records, len(files)
 
-    with out_jsonl.open('w', encoding='utf-8') as w:
+
+# newline='\n' keeps the outputs byte-identical regardless of the OS that generates them
+def write_jsonl(records: List[Dict], path: Path) -> None:
+    with path.open('w', encoding='utf-8', newline='\n') as w:
         for rec in records:
             w.write(json.dumps(rec, ensure_ascii=False) + '\n')
 
+
+def write_embeddings_jsonl(records: List[Dict], path: Path) -> None:
+    """Slim version for vector indexing: identifiers plus the embedding text."""
+    write_jsonl([{
+        'id': r['id'],
+        'arquivo': r['arquivo'],
+        'ordem_no_arquivo': r['ordem_no_arquivo'],
+        'nome_regra': r['nome_regra'],
+        'texto': r['texto_embedding'],
+        'status_validacao': r['status_validacao'],
+    } for r in records], path)
+
+
+def write_markdown(records: List[Dict], file_count: int, path: Path) -> None:
+    unclassified_count = sum(len(r['clausulas_nao_classificadas']) for r in records)
     by_file: Dict[str, List[Dict]] = {}
     for r in records:
         by_file.setdefault(r['arquivo'], []).append(r)
 
-    with out_md.open('w', encoding='utf-8') as w:
+    with path.open('w', encoding='utf-8', newline='\n') as w:
         w.write('# Explicações de regras de negócio geradas a partir das parametrizações GoBR\n\n')
         w.write(f'- Arquivos `.gobr` processados: **{file_count}**\n')
         w.write(f'- Blocos `parametros` convertidos: **{len(records)}**\n')
@@ -457,30 +464,29 @@ def generate(input_dir: Path, out_jsonl: Path, out_md: Path) -> Tuple[int, int, 
                 w.write(f'### {r["nome_regra"]}\n\n')
                 w.write(r['explicacao_detalhada'] + '\n\n')
 
-    return file_count, len(records), unclassified_count
-
 
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser(description='Gera explicações em linguagem de negócio a partir de parametrizações GoBR.')
     ap.add_argument('input_dir', type=Path, help='Diretório com arquivos .gobr')
-    ap.add_argument('--jsonl', type=Path, default=Path('parametrizacoes_explicadas.jsonl'))
-    ap.add_argument('--md', type=Path, default=Path('parametrizacoes_explicadas.md'))
-    ap.add_argument('--embeddings-jsonl', type=Path, default=None, help='Saída enxuta pronta para indexação vetorial')
+    ap.add_argument('--jsonl', type=Path, default=Path('data/parametrizacoes_explicadas.jsonl'))
+    ap.add_argument('--md', type=Path, default=Path('data/parametrizacoes_explicadas.md'))
+    ap.add_argument('--embeddings-jsonl', type=Path, default=Path('data/parametrizacoes_para_embeddings.jsonl'),
+                    help='Saída enxuta pronta para indexação vetorial')
     args = ap.parse_args()
-    fc, rc, uc = generate(args.input_dir, args.jsonl, args.md)
-    if args.embeddings_jsonl:
-        with args.embeddings_jsonl.open('w', encoding='utf-8') as out:
-            with args.jsonl.open(encoding='utf-8') as src:
-                for line in src:
-                    rec = json.loads(line)
-                    slim = {
-                        'id': rec['id'],
-                        'arquivo': rec['arquivo'],
-                        'ordem_no_arquivo': rec['ordem_no_arquivo'],
-                        'nome_regra': rec['nome_regra'],
-                        'texto': rec['texto_embedding'],
-                        'status_validacao': rec['status_validacao'],
-                    }
-                    out.write(json.dumps(slim, ensure_ascii=False) + '\n')
-    print(f'Processados {fc} arquivos; geradas {rc} explicações; {uc} cláusulas não classificadas.')
+
+    if not args.input_dir.is_dir():
+        ap.error(f'diretório não encontrado: {args.input_dir}')
+    records, file_count = build_records(args.input_dir)
+    if not records:
+        ap.error(f'nenhum bloco "parametros" encontrado em {args.input_dir}')
+    for out in (args.jsonl, args.md, args.embeddings_jsonl):
+        out.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(records, args.jsonl)
+    write_markdown(records, file_count, args.md)
+    write_embeddings_jsonl(records, args.embeddings_jsonl)
+
+    unclassified = sum(len(r['clausulas_nao_classificadas']) for r in records)
+    review = sum(r['status_validacao'] != 'ok' for r in records)
+    print(f'Processados {file_count} arquivos; geradas {len(records)} explicações; '
+          f'{unclassified} cláusulas não classificadas; {review} blocos para revisão.')

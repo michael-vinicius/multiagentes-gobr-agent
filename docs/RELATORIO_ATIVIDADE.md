@@ -7,7 +7,7 @@ Transformar cada bloco `parametros` dos arquivos GoBR em uma descrição de neg�
 ## 2. Como foi feito
 
 1. Foram lidos todos os arquivos `.gobr` da pasta `referencias/`.
-2. Cada bloco `parametros "...":` foi separado individualmente.
+2. Cada bloco `parametros "...":` foi separado individualmente, juntando as cláusulas quebradas em várias linhas (argumentos longos, alternativas com `ou` e opções de `preferencia` continuadas com `e`).
 3. As cláusulas foram classificadas em: alvo (`do time`, `da carteira`, `da segmentacao`), filtros temporais, condições (`quando`/`e`) e ações (`frequencia`, `preferencia`, `nao agendar`, `fixo`, `roteirizavel`, `sem choque`, `restrito`).
 4. A DSL foi convertida para uma explicação em português comercial, preservando a semântica original.
 5. Cada registro recebeu o bloco GoBR original, uma explicação curta, uma explicação detalhada, um texto próprio para embedding e campos de validação.
@@ -69,13 +69,30 @@ parametros "Inativos Curva C (Norte e Nordeste - Corporativo/ Consumidor)":
     quando ramo de atividade igual("CONS. FINAL"
 ```
 
-## 6. Arquivos de entrega
+## 6. Revisão de qualidade das explicações
 
-- `parametrizacoes_explicadas.jsonl`: dataset completo, com DSL original, metadados e explicações.
-- `parametrizacoes_para_embeddings.jsonl`: versão enxuta pronta para a etapa de embeddings/RAG.
-- `parametrizacoes_explicadas.md`: versão humana agrupada por arquivo.
-- `gerar_explicacoes_gobr.py`: script reprodutível para gerar novamente as saídas.
+Uma revisão das 1700 saídas encontrou defeitos no gerador, que foram corrigidos antes de regenerar os dados:
 
-## 7. Próximo passo
+| Defeito | Registros afetados | Correção |
+|---|---|---|
+| A explicação curta juntava sujeito e ação com ponto, e a ação ficava gramaticalmente atribuída ao cliente: “Clientes que são filiais. devem não agendar esses clientes.” | 1699 | Novo formato `<clientes>: <ações>.`, por exemplo “Clientes que são filiais: não agendar esses clientes.” |
+| Opções de `preferencia` continuadas em linhas iniciadas por `e` (`preferencia nos dias uteis` / `e no sabado` / `e no domingo`) eram lidas como **condições** de seleção de clientes, o que mudava o sentido da regra | 5 | As continuações passam a fazer parte da ação de preferência |
+| `frequencia de 1 dia` gerava “a cada 1 dias” | 11 | Concordância de número |
+| Sem condições, o texto para embedding repetia o alvo (“Clientes da carteira X: … Alvo: clientes da carteira X.”) | 197 | “Alvo” só é acrescentado quando o texto começa pelas condições |
+
+**Como a regeneração foi validada.** Os arquivos `.gobr` originais não estão no repositório, então os registros foram reconstruídos a partir do campo `dsl_original`, que guarda o bloco completo:
+
+1. Com o código **anterior** às correções, a reconstrução reproduziu os três arquivos de `data/` byte a byte, o que prova que o `dsl_original` é suficiente para regenerar tudo.
+2. Com o código corrigido, só mudaram os campos ligados aos defeitos acima (`explicacao_curta`, `texto_embedding` e, nos 16 registros dos itens 2 e 3, `acoes`, `condicoes` e `explicacao_detalhada`). Ids, ordem, alvos, DSL e validação ficaram idênticos.
+3. O CLI foi executado de ponta a ponta sobre os 246 arquivos `.gobr` reconstruídos e produziu saída idêntica à da regeneração.
+
+## 7. Arquivos de entrega
+
+- `data/parametrizacoes_explicadas.jsonl`: dataset completo, com DSL original, metadados e explicações.
+- `data/parametrizacoes_para_embeddings.jsonl`: versão enxuta pronta para a etapa de embeddings/RAG.
+- `data/parametrizacoes_explicadas.md`: versão humana agrupada por arquivo.
+- `src/gerar_explicacoes_gobr.py`: script reprodutível para gerar novamente as saídas (`python src/gerar_explicacoes_gobr.py <pasta_gobr>`).
+
+## 8. Próximo passo
 
 Indexar o campo `texto` de `parametrizacoes_para_embeddings.jsonl` com embeddings e armazenar os metadados (`arquivo`, `ordem_no_arquivo`, `nome_regra`, `id`). Durante a busca, recuperar os exemplos semanticamente mais próximos da regra descrita pelo usuário e usar o manual GoBR como uma segunda fonte de contexto para montar a resposta final.

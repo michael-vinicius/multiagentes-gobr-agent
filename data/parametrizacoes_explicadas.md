@@ -1824,7 +1824,7 @@ Para clientes vinculados ao time “televendas”, considerar clientes com a úl
 
 ### Agendamento padrão - Rota
 
-Para clientes vinculados ao time “televendas”, considerar clientes data da rota hoje. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “televendas”, considerar clientes data da rota hoje. Ação: atender a cada 1 dia.
 
 ### Clientes prospects
 
@@ -2284,7 +2284,7 @@ Para clientes da carteira “empresa toda”, considerar clientes sem venda. Aç
 
 ### Teste CCN 11: 1d para todos os clientes
 
-Aplicar a regra a clientes vinculados ao time “todos”. Ação: atender a cada 1 dias.
+Aplicar a regra a clientes vinculados ao time “todos”. Ação: atender a cada 1 dia.
 
 ## regra_099.gobr
 
@@ -3918,7 +3918,7 @@ Para clientes vinculados ao time “televendas”, considerar clientes sem compr
 
 ### HospDrogas: Frequência de 1 dia para clientes novos e sem atendimento (Time Carteira, PetVet e Portal)
 
-Para clientes vinculados ao time “time carteira”, “time petvet”, “time portal”, considerar clientes cadastrado a partir do dia '2023-07-18'; e fora da recência de visita em 60 dias. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “time carteira”, “time petvet”, “time portal”, considerar clientes cadastrado a partir do dia '2023-07-18'; e fora da recência de visita em 60 dias. Ação: atender a cada 1 dia.
 
 ### HospDrogas: Frequência de 7 dias para clientes novos (Time Carteira, PetVet e Portal)
 
@@ -4308,27 +4308,27 @@ Aplicar a regra a clientes vinculados ao time “todos os vendedores”. Ação:
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias - Primeira Compra
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e sem venda do vendedor; e recência de visita entre 4 dias e 3000 dias. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e sem venda do vendedor; e recência de visita entre 4 dias e 3000 dias. Ação: atender a cada 1 dia.
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias - Estimular Regularidade de Compra
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e com a última compra/positivação com o vendedor entre 31 e 60 dias atrás. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e com a última compra/positivação com o vendedor entre 31 e 60 dias atrás. Ação: atender a cada 1 dia.
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias - Risco de inatividade
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e com a última compra/positivação com o vendedor entre 61 e 90 dias atrás. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e com a última compra/positivação com o vendedor entre 61 e 90 dias atrás. Ação: atender a cada 1 dia.
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias - Compra regularmente
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e atividade do vendedor de 30 dias. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e atividade do vendedor de 30 dias. Ação: atender a cada 1 dia.
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias - Resgate de cliente sem compra
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e inativos para o vendedor. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias; e inativos para o vendedor. Ação: atender a cada 1 dia.
 
 ### Fechamento de Rota e Sem Atendimento há 3 dias
 
-Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias. Ação: atender a cada 1 dias.
+Para clientes vinculados ao time “vendedores_ativos”, “vendedores_prospects”, considerar clientes pessoa jurídica; e data da rota nos proximos 1 dia; e recência de visita entre 4 dias e 3000 dias. Ação: atender a cada 1 dia.
 
 ### Primeira Compra (Vendedores Prospects)
 
@@ -4624,7 +4624,7 @@ Para clientes vinculados ao time “televendas”, considerar clientes bloqueado
 
 ### Rota todo dia -> Agendamento todo dia
 
-Para clientes da carteira “rota_todo_dia”, considerar clientes maior na terca; e maior na quarta; e maior na quinta; e maior na sexta. Ação: atender diariamente (a cada 1 dia); definir preferência de atendimento maior na segunda; marcar os clientes como roteirizáveis; marcar a parametrização como fixa.
+Aplicar a regra a clientes da carteira “rota_todo_dia”. Ação: atender diariamente (a cada 1 dia); definir preferência de atendimento maior na segunda e maior na terça e maior na quarta e maior na quinta e maior na sexta; marcar os clientes como roteirizáveis; marcar a parametrização como fixa.
 
 ### Rota de terça -> Agendamento segunda
 
@@ -6666,7 +6666,7 @@ Para clientes vinculados ao time “televendas”, considerar clientes sem compr
 
 ### Cobertura de rota de visita exatamente 7 dias depois
 
-Para clientes vinculados ao time “felipe”, considerar clientes data da rota ha 7 dias atras. Ação: atender a cada 1 dias; marcar a parametrização como fixa.
+Para clientes vinculados ao time “felipe”, considerar clientes data da rota ha 7 dias atras. Ação: atender a cada 1 dia; marcar a parametrização como fixa.
 
 ### Não agendar clientes com compra em 30 dias (Ativos)
 
@@ -6864,19 +6864,19 @@ Para clientes da carteira “empresa toda”, considerar clientes com a última 
 
 ### Regra Padrao do goVendas Customizável - Teste cidade goiania
 
-Para clientes da carteira “empresa toda”, considerar clientes localizados nas cidades ("GOIANIA"); e no sabado; e no domingo. Ação: usar a frequência média dos clientes inativos da empresa; dar preferência de atendimento aos dias úteis (segunda a sexta-feira).
+Para clientes da carteira “empresa toda”, considerar clientes localizados nas cidades ("GOIANIA"). Ação: usar a frequência média dos clientes inativos da empresa; definir preferência de atendimento nos dias úteis e no sábado e no domingo.
 
 ### Regra Padrao do goVendas Customizável - Clientes ativos
 
-Para clientes da carteira “empresa toda”, considerar clientes ativos para o vendedor; e no sabado; e no domingo. Ação: usar a frequência média dos clientes ativos da empresa; dar preferência de atendimento aos dias úteis (segunda a sexta-feira).
+Para clientes da carteira “empresa toda”, considerar clientes ativos para o vendedor. Ação: usar a frequência média dos clientes ativos da empresa; definir preferência de atendimento nos dias úteis e no sábado e no domingo.
 
 ### Regra Padrao do goVendas Customizável - Clientes inativos
 
-Para clientes da carteira “empresa toda”, considerar clientes inativos para o vendedor; e no sabado; e no domingo. Ação: usar a frequência média dos clientes inativos da empresa; dar preferência de atendimento aos dias úteis (segunda a sexta-feira).
+Para clientes da carteira “empresa toda”, considerar clientes inativos para o vendedor. Ação: usar a frequência média dos clientes inativos da empresa; definir preferência de atendimento nos dias úteis e no sábado e no domingo.
 
 ### Regra Padrao do goVendas Customizável - Clientes sem vendas
 
-Para clientes da carteira “empresa toda”, considerar clientes sem vendas; e no sabado; e no domingo. Ação: usar a frequência média dos clientes inativos da empresa; dar preferência de atendimento aos dias úteis (segunda a sexta-feira).
+Para clientes da carteira “empresa toda”, considerar clientes sem vendas. Ação: usar a frequência média dos clientes inativos da empresa; definir preferência de atendimento nos dias úteis e no sábado e no domingo.
 
 ### Regra Padrao - default
 
@@ -6902,7 +6902,7 @@ Para clientes vinculados ao time “felipe”, considerar clientes com a última
 
 ### Cobertura de rota de visita exatamente 14 dias depois
 
-Para clientes vinculados ao time “temporario_2meses”, considerar clientes data da rota ha 14 dias atras; e com 5% de credito. Ação: atender a cada 1 dias; dar preferência de atendimento aos dias úteis e ao sábado.
+Para clientes vinculados ao time “temporario_2meses”, considerar clientes data da rota ha 14 dias atras; e com 5% de credito. Ação: atender a cada 1 dia; dar preferência de atendimento aos dias úteis e ao sábado.
 
 ### Clientes com compra entre 30 e 90 dias
 
