@@ -1,0 +1,10 @@
+{
+  "modelo": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "dimensao": 384,
+  "total_vetores": 1700,
+  "metrica": "cosseno (vetores normalizados, produto escalar)",
+  "campo_indexado": "texto",
+  "fonte": "data/parametrizacoes_para_embeddings.jsonl",
+  "fonte_sha256": "dd431db8a12b71c103f795e83359f5b9935b64522f096b1860ec3126eff8f803",
+  "gerado_em": "2026-11-03T14:50:09+00:00"
+}
