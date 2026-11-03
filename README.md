@@ -10,7 +10,8 @@ Para isso o trabalho foi dividido em etapas:
 |---|---|---|---|
 | 1 | Geração de explicações (regras de negócio) a partir das parametrizações | ✅ concluída | [docs/RELATORIO_ATIVIDADE.md](docs/RELATORIO_ATIVIDADE.md) |
 | 2 | Indexação das explicações (embeddings + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO.md](docs/RELATORIO_INDEXACAO.md) |
-| 3 | Agente conversacional com RAG (exemplos + manual GoBR) | ⏳ próximo passo | — |
+| 3 | Indexação do manual GoBR (extração do PDF + chunks + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO_MANUAL.md](docs/RELATORIO_INDEXACAO_MANUAL.md) |
+| 4 | Agente conversacional com RAG (exemplos + manual GoBR) | ⏳ próximo passo | — |
 
 ## Fluxo completo
 
@@ -29,8 +30,18 @@ Embeddings multilíngues (384 dim, cosseno)
 index/                                                  (vetores + metadados + manifesto)
       ↓  src/buscar_explicacoes.py
 Consulta em linguagem natural → top-k parametrizações semelhantes (+ blocos vizinhos)
+
+Manual GoBR (govendas-rules.pdf, 62 páginas)
+      ↓  src/extrair_manual.py
+Títulos, texto, blocos de código e tabelas → 1 chunk por seção (seções longas divididas sem cortar código nem linhas de tabela)
+      ↓  src/indexar_manual.py
+Embeddings multilíngues para recuperação (1024 dim, cosseno)
       ↓
-Agente (etapa 3): monta a parametrização GoBR usando os exemplos recuperados
+index/manual/                                           (gerado localmente, fora do repositório)
+      ↓  src/buscar_manual.py
+Pergunta em linguagem natural → top-k trechos do manual (seção, páginas, texto)
+
+Agente (etapa 4): monta a parametrização GoBR usando os exemplos e o manual recuperados
 ```
 
 ## Etapa 1 — Explicações
@@ -63,6 +74,15 @@ O campo `texto` das 1700 explicações foi transformado em vetores com o modelo 
 - Avaliação com 12 consultas de referência: **8/12 acertos no 1º lugar e 9/12 no top-5**.
 - Limitações conhecidas: negação (“atender” × “não agendar”), valores abreviados (`CONS. FINAL`) e intervalos e frequências numéricos. As melhorias propostas estão no relatório.
 
+## Etapa 3 — Indexação do manual
+
+O manual em PDF é extraído preservando a estrutura (títulos, parágrafos, blocos de código com indentação e tabelas célula a célula) e quebrado em um chunk por seção. Seções maiores que a janela do modelo são divididas entre parágrafos, exemplos ou linhas de tabela, repetindo o caminho de títulos e o cabeçalho da tabela.
+
+- 95 seções, 99 chunks (mediana de 193 tokens, máximo de 498).
+- Modelo `multilingual-e5-large` (512 tokens): o MiniLM da etapa 2 trunca em 128 tokens, e 72 das 90 seções passariam disso.
+- Avaliação com 24 consultas de referência: **21/24 acertos no 1º lugar e 24/24 no top-5** (o mpnet, nas mesmas condições, ficou em 8/24 e 14/24).
+- O manual tem direitos reservados e o repositório é público: o PDF e o índice gerado (`index/manual/`) não são versionados. O índice é gerado localmente a partir do PDF.
+
 ## Como executar
 
 Requer Python 3.10+.
@@ -83,9 +103,16 @@ python src/buscar_explicacoes.py "clientes sem comprar há mais de 90 dias" -k 5
 
 # Avaliar a qualidade da busca
 python src/avaliar_busca.py
+
+# Etapa 3 — gerar o índice do manual (precisa do govendas-rules.pdf)
+python src/indexar_manual.py <caminho>/govendas-rules.pdf
+
+# Buscar no manual e avaliar
+python src/buscar_manual.py "como evitar que televendas e campo atendam o cliente no mesmo dia" -k 3
+python src/avaliar_busca_manual.py
 ```
 
-Na primeira execução o modelo de embeddings (≈ 220 MB) é baixado e fica em cache.
+Na primeira execução os modelos de embeddings são baixados e ficam em cache (≈ 220 MB para as explicações e ≈ 2,2 GB para o manual).
 
 > Os arquivos `.gobr` de origem não fazem parte do repositório. O bloco original de cada parametrização está preservado no campo `dsl_original` do JSONL.
 
@@ -96,17 +123,23 @@ import sys
 from pathlib import Path
 sys.path.insert(0, 'src')
 from buscar_explicacoes import IndiceExplicacoes
+from buscar_manual import IndiceManual
 
 indice = IndiceExplicacoes(Path('index'), Path('data/parametrizacoes_explicadas.jsonl'))
 for r in indice.buscar('não agendar clientes inadimplentes', k=3):
     print(r['score'], r['nome_regra'], r['dsl_original'])
+
+manual = IndiceManual(Path('index/manual'))
+for r in manual.buscar('filtro para clientes inadimplentes', k=2):
+    print(r['score'], r['secao'], r['titulo'], r['texto'])
 ```
 
 ## Estrutura do repositório
 
 ```text
-data/    datasets gerados na etapa 1 (JSONL completo, JSONL para embeddings, Markdown)
-docs/    relatórios de cada atividade
-index/   índice vetorial gerado na etapa 2
-src/     scripts de geração, indexação, busca e avaliação
+data/           datasets gerados na etapa 1 (JSONL completo, JSONL para embeddings, Markdown)
+docs/           relatórios de cada atividade
+index/          índice vetorial das explicações (etapa 2)
+index/manual/   índice do manual (etapa 3), gerado localmente e fora do controle de versão
+src/            scripts de geração, extração, indexação, busca e avaliação
 ```
