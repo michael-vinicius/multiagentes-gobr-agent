@@ -6,3 +6,6 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+# manual GoBR: material com direitos reservados; o índice é gerado localmente a partir do PDF
+govendas-rules.pdf
+index/manual/
