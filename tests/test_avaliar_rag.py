@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from avaliar_rag import CASOS, avaliar_caso, faltando
+from avaliar_rag import CASOS, CASOS_AJUSTE, CASOS_TESTE, avaliar_caso, faltando
 from rag import ErroGeracao, Gerador, Recuperador
 from test_rag import DSL_FILIAL, BackendFake, BuscadorFake, exemplo, trecho
 
@@ -75,3 +75,68 @@ def test_erro_de_geracao_e_registrado():
 def test_casos_bem_formados():
     assert len({p for p, _ in CASOS}) == len(CASOS)
     assert all(clausulas and all(grupo for grupo in clausulas) for _, clausulas in CASOS)
+
+
+def test_palavra_inteira_adimplentes_nao_casa_em_inadimplentes():
+    assert faltando('quando inadimplentes', [('adimplentes',)]) == ['adimplentes']
+    assert faltando('quando adimplentes', [('adimplentes',)]) == []
+
+
+def test_parenteses_no_fim_da_alternativa():
+    assert faltando('frequencia quinzenal()', [('frequencia quinzenal()',)]) == []
+
+
+def test_conjuntos_de_ajuste_e_teste_sao_disjuntos():
+    assert not {p for p, _ in CASOS_AJUSTE} & {p for p, _ in CASOS_TESTE}
+    assert len(CASOS) == len(CASOS_AJUSTE) + len(CASOS_TESTE)
+
+
+def test_clausulas_do_gabarito_existem_nas_regras_reais_ou_no_manual():
+    # protege o gabarito contra sintaxe inventada; quando o manual não está disponível, usa só as regras reais
+    import json
+    from pathlib import Path
+    from avaliar_rag import _norm, _sem_aspas
+    raiz = Path(__file__).resolve().parents[1]
+    corpus = [r['dsl_original'] for r in map(json.loads, (raiz / 'data/parametrizacoes_explicadas.jsonl')
+                                             .read_text(encoding='utf-8').splitlines())]
+    manual = raiz / 'index/manual/chunks.jsonl'
+    if manual.exists():
+        corpus += [json.loads(l)['texto'] for l in manual.read_text(encoding='utf-8').splitlines()]
+    texto = _norm(_sem_aspas('\n'.join(corpus)))
+    casos = CASOS if manual.exists() else CASOS_TESTE  # parte do gabarito de ajuste só existe no manual
+    for pergunta, clausulas in casos:
+        assert faltando(texto, clausulas, forma=True) == [], pergunta
+    # cada alternativa individual também precisa existir (uma alternativa inventada passaria despercebida)
+    for pergunta, clausulas in casos:
+        for grupo in clausulas:
+            for alt in grupo:
+                assert faltando(texto, [(alt,)], forma=True) == [], (pergunta, alt)
+
+
+def test_cobertura_por_forma_ignora_os_numeros():
+    assert faltando('frequencia de 30 dias', [('frequencia de 14 dias',)]) == ['frequencia de 14 dias']
+    assert faltando('frequencia de 30 dias', [('frequencia de 14 dias',)], forma=True) == []
+    assert faltando('| `inatividade de <<N>> dias` |', [('inatividade de 90 dias',)], forma=True) == []
+    assert faltando('frequencia semanal()', [('frequencia de 14 dias',)], forma=True) == ['frequencia de 14 dias']
+
+
+def test_reavaliar_aplica_gabarito_e_validador_atuais_sem_gerar_de_novo():
+    from avaliar_rag import reavaliar
+    from catalogo_gobr import Catalogo
+    pergunta, _ = CASOS_AJUSTE[0]  # filiais: do time + cliente filial + nao agendar
+    salvo = avaliar_caso(recuperador(), Gerador(BackendFake(RESPOSTA)), pergunta, CASOS_AJUSTE[0][1], 1, 1)
+    salvo.pop('conjunto', None)
+    assert salvo['aprovado']
+    catalogo = Catalogo()  # catálogo vazio: a condição "cliente filial" passa a ser desconhecida
+    [r] = reavaliar([salvo], catalogo)
+    assert r['conjunto'] == 'ajuste' and not r['dsl_valida'] and not r['aprovado']
+    assert r['contexto_cobre'] == salvo['contexto_cobre']
+    [r] = reavaliar([salvo], None)
+    assert r['aprovado']
+
+
+def test_reavaliar_mantem_casos_com_erro():
+    from avaliar_rag import reavaliar
+    pergunta, _ = CASOS_TESTE[0]
+    [r] = reavaliar([{'pergunta': pergunta, 'erro': 'sem conexão', 'aprovado': False}], None)
+    assert r['conjunto'] == 'teste' and not r['aprovado']

@@ -157,6 +157,16 @@ class TestValidacaoDsl:
         assert v['status'] == 'revisao_necessaria'
         assert v['problemas'] == ['nenhuma fonte de clientes (do time / da carteira / da segmentacao)']
 
+    @pytest.mark.parametrize('sujeira', ['  [E2, M1]', '  // Exemplo E1'])
+    def test_citacao_ou_comentario_dentro_da_regra(self, sujeira):
+        [v] = validar_dsl(DSL_FILIAL.replace('do time("televendas")', 'do time("televendas")' + sujeira))
+        assert v['status'] == 'revisao_necessaria'
+        assert any('dentro da regra' in p for p in v['problemas'])
+
+    def test_barra_dupla_entre_aspas_nao_conta(self):
+        [v] = validar_dsl(DSL_FILIAL.replace('"televendas"', '"https://exemplo/televendas"'))
+        assert v['status'] == 'ok'
+
     def test_clausula_desconhecida(self):
         [v] = validar_dsl(DSL_FILIAL + '\n    visitar com carinho')
         assert v['clausulas_nao_classificadas'] == ['visitar com carinho']
@@ -177,30 +187,42 @@ RESPOSTA_OK = (f'Não agenda as filiais do televendas [E1, M1].\n\n```gobr\n{DSL
                'Pontos de atenção: confirme o nome do time [M9].')
 
 
+U = [{'role': 'user', 'content': 'm'}]
+MSGS = [{'role': 'user', 'content': 'MSG'}, {'role': 'assistant', 'content': 'R1'}, {'role': 'user', 'content': 'CORRIJA'}]
+
+
 class BackendFake:
-    def __init__(self, texto: str = RESPOSTA_OK, stop_reason: str = 'stop'):
-        self.saida = SaidaModelo(texto, 'modelo-fake', stop_reason, {'input_tokens': 1200, 'output_tokens': 300})
+    """Devolve os textos na ordem das chamadas (o último se repete) e registra cada chamada."""
+
+    def __init__(self, *textos: str, stop_reason: str = 'stop'):
+        self.textos = list(textos) or [RESPOSTA_OK]
+        self.stop_reason = stop_reason
         self.chamadas: List[tuple] = []
 
-    def completar(self, system: str, mensagem: str) -> SaidaModelo:
-        self.chamadas.append((system, mensagem))
-        return self.saida
+    def completar(self, system: str, mensagens) -> SaidaModelo:
+        self.chamadas.append((system, [dict(m) for m in mensagens]))
+        texto = self.textos[min(len(self.chamadas), len(self.textos)) - 1]
+        return SaidaModelo(texto, 'modelo-fake', self.stop_reason, {'input_tokens': 1200, 'output_tokens': 300})
+
+
+RESPOSTA_LIMPA = f'Não agenda as filiais do televendas [E1, M1].\n\n```gobr\n{DSL_FILIAL}\n```'
 
 
 class TestGerador:
     def test_envia_system_prompt_e_mensagem_montada(self):
-        backend = BackendFake()
+        backend = BackendFake(RESPOSTA_LIMPA)
         Gerador(backend).gerar(contexto())
-        assert backend.chamadas == [(rag.SYSTEM_PROMPT, montar_mensagem(contexto()))]
+        assert backend.chamadas == [(rag.SYSTEM_PROMPT, [{'role': 'user', 'content': montar_mensagem(contexto())}])]
 
     def test_interpreta_a_resposta(self):
-        resp = Gerador(BackendFake()).gerar(contexto())
+        resp = Gerador(BackendFake(), max_tentativas=1).gerar(contexto())
         assert resp.blocos_gobr == [DSL_FILIAL]
         assert resp.citacoes == ['E1', 'M1', 'M9']
         assert resp.citacoes_invalidas == ['M9']
         assert resp.dsl_valida
         assert resp.uso == {'input_tokens': 1200, 'output_tokens': 300}
         assert resp.modelo == 'modelo-fake' and resp.stop_reason == 'stop'
+        assert resp.tentativas == 1 and resp.problemas_por_tentativa == [['cita fontes que não existem no contexto: M9']]
 
     def test_resposta_sem_dsl_nao_e_valida(self):
         resp = Gerador(BackendFake('O manual não tem cláusula para isso [M1].')).gerar(contexto())
@@ -213,6 +235,80 @@ class TestGerador:
     def test_resposta_vazia(self):
         with pytest.raises(ErroGeracao, match='sem texto'):
             Gerador(BackendFake('  \n')).gerar(contexto())
+
+    def test_tentativas_invalidas(self):
+        with pytest.raises(ValueError):
+            Gerador(BackendFake(), max_tentativas=0)
+
+
+class TestCorrecao:
+    SEM_CITACAO = f'Não agenda as filiais.\n\n```gobr\n{DSL_FILIAL}\n```'
+
+    def test_resposta_sem_problemas_nao_gera_segunda_chamada(self):
+        backend = BackendFake(RESPOSTA_LIMPA)
+        resp = Gerador(backend).gerar(contexto())
+        assert len(backend.chamadas) == 1 and resp.tentativas == 1 and resp.problemas_por_tentativa == [[]]
+
+    def test_problema_volta_ao_modelo_com_a_lista_do_que_corrigir(self):
+        backend = BackendFake(self.SEM_CITACAO, RESPOSTA_LIMPA)
+        resp = Gerador(backend).gerar(contexto())
+        assert resp.tentativas == 2 and resp.texto == RESPOSTA_LIMPA and resp.citacoes == ['E1', 'M1']
+        _, mensagens = backend.chamadas[1]
+        assert [m['role'] for m in mensagens] == ['user', 'assistant', 'user']
+        assert mensagens[1]['content'] == self.SEM_CITACAO
+        assert 'não cita as fontes' in mensagens[2]['content']
+        assert resp.problemas_por_tentativa == [['não cita as fontes ([E#] ou [M#]) das cláusulas usadas'], []]
+        assert resp.uso == {'input_tokens': 2400, 'output_tokens': 600}
+
+    def test_esgotadas_as_tentativas_devolve_a_resposta_mesmo_com_problemas(self):
+        backend = BackendFake(self.SEM_CITACAO)
+        resp = Gerador(backend, max_tentativas=3).gerar(contexto())
+        assert len(backend.chamadas) == 3 and resp.tentativas == 3 and resp.citacoes == []
+        assert len(resp.problemas_por_tentativa) == 3
+        assert resp.tentativa_escolhida == 3  # empate: a mais recente
+
+    def test_correcao_que_piora_nao_substitui_a_primeira_resposta(self):
+        pior = '```gobr\nparametros "x":\n    quando inadimplentes\n    nao agendar  // E1\n```'
+        backend = BackendFake(self.SEM_CITACAO, pior)
+        resp = Gerador(backend).gerar(contexto())
+        assert resp.tentativas == 2 and resp.tentativa_escolhida == 1 and resp.texto == self.SEM_CITACAO
+        assert len(resp.problemas_por_tentativa[1]) > len(resp.problemas_por_tentativa[0])
+        assert resp.uso == {'input_tokens': 2400, 'output_tokens': 600}  # o custo das duas chamadas conta
+
+    def test_mensagem_de_correcao_pede_citacoes_fora_do_bloco(self):
+        msg = rag.montar_correcao(['não cita as fontes'])
+        assert '- não cita as fontes' in msg and 'fora do bloco ```gobr' in msg
+
+    def test_problema_do_catalogo_tambem_dispara_correcao(self):
+        from catalogo_gobr import Catalogo
+        catalogo = Catalogo()
+        catalogo.adicionar_dsl(DSL_FILIAL)
+        inventada = RESPOSTA_LIMPA.replace('quando cliente filial', 'quando cliente muito especial')
+        backend = BackendFake(inventada, RESPOSTA_LIMPA)
+        resp = Gerador(backend, catalogo=catalogo).gerar(contexto())
+        assert resp.tentativas == 2 and resp.dsl_valida
+        assert 'condição fora do manual' in backend.chamadas[1][1][2]['content']
+
+
+class TestProblemasDaResposta:
+    def resposta(self, texto: str) -> rag.Resposta:
+        return Gerador(BackendFake(texto), max_tentativas=1).gerar(contexto())
+
+    def test_resposta_limpa(self):
+        assert rag.problemas_da_resposta(self.resposta(RESPOSTA_LIMPA)) == []
+
+    def test_lista_cada_problema_uma_vez(self):
+        texto = '[E7]\n```gobr\nparametros "x":\n    quando inadimplentes\n    visitar com carinho\n```'
+        assert rag.problemas_da_resposta(self.resposta(texto)) == [
+            'nenhuma fonte de clientes (do time / da carteira / da segmentacao)',
+            'nenhuma ação de parametrização reconhecida',
+            'cláusula que não é fonte, condição, filtro temporal nem ação conhecida: "visitar com carinho"',
+            'cita fontes que não existem no contexto: E7',
+        ]
+
+    def test_sem_bloco_gobr(self):
+        assert rag.problemas_da_resposta(self.resposta('Não há cláusula para isso [M1].')) == [
+            'a resposta não traz a regra num bloco ```gobr']
 
 
 def transporte_fake(resposta: Dict):
@@ -232,37 +328,37 @@ class TestBackendOllama:
     def test_monta_a_requisicao(self):
         enviar, chamadas = transporte_fake(OLLAMA_OK)
         BackendOllama('m', url='http://host:1/', num_ctx=8192, max_tokens=500, timeout=7,
-                      transporte=enviar).completar('SYS', 'MSG')
+                      transporte=enviar).completar('SYS', MSGS)
         [(url, payload, timeout)] = chamadas
         assert url == 'http://host:1/api/chat' and timeout == 7
         assert payload['model'] == 'm' and payload['stream'] is False
-        assert payload['messages'] == [{'role': 'system', 'content': 'SYS'}, {'role': 'user', 'content': 'MSG'}]
+        assert payload['messages'] == [{'role': 'system', 'content': 'SYS'}, *MSGS]
         assert payload['options'] == {'num_ctx': 8192, 'num_predict': 500, 'temperature': 0}
 
     def test_interpreta_a_resposta(self):
-        saida = BackendOllama(transporte=transporte_fake(OLLAMA_OK)[0]).completar('s', 'm')
+        saida = BackendOllama(transporte=transporte_fake(OLLAMA_OK)[0]).completar('s', U)
         assert saida == SaidaModelo('resposta', 'qwen2.5:7b', 'stop', {'input_tokens': 3000, 'output_tokens': 400})
 
     def test_prompt_maior_que_a_janela(self):
         enviar = transporte_fake({**OLLAMA_OK, 'prompt_eval_count': 8000, 'eval_count': 192})[0]
         with pytest.raises(ErroGeracao, match='num_ctx=8192'):
-            BackendOllama(num_ctx=8192, transporte=enviar).completar('s', 'm')
+            BackendOllama(num_ctx=8192, transporte=enviar).completar('s', U)
 
     def test_resposta_truncada(self):
         with pytest.raises(ErroGeracao, match='truncada'):
-            BackendOllama(transporte=transporte_fake({**OLLAMA_OK, 'done_reason': 'length'})[0]).completar('s', 'm')
+            BackendOllama(transporte=transporte_fake({**OLLAMA_OK, 'done_reason': 'length'})[0]).completar('s', U)
 
     def test_servidor_fora_do_ar(self):
         def enviar(*_):
             raise urllib.error.URLError('connection refused')
         with pytest.raises(ErroGeracao, match='está rodando'):
-            BackendOllama(transporte=enviar).completar('s', 'm')
+            BackendOllama(transporte=enviar).completar('s', U)
 
     def test_modelo_nao_baixado(self):
         def enviar(url, *_):
             raise urllib.error.HTTPError(url, 404, 'Not Found', {}, io.BytesIO(b'{"error":"model not found"}'))
         with pytest.raises(ErroGeracao, match='404.*model not found'):
-            BackendOllama(transporte=enviar).completar('s', 'm')
+            BackendOllama(transporte=enviar).completar('s', U)
 
 
 def mensagem(texto: str = '', stop_reason: str = 'end_turn', blocos=None, stop_details=None):
@@ -288,29 +384,44 @@ class ClienteFake:
 class TestBackendAnthropic:
     def test_monta_a_requisicao(self):
         cliente = ClienteFake(mensagem('ok'))
-        BackendAnthropic(cliente, modelo='m', esforco='low', max_tokens=123).completar('SYS', 'MSG')
+        BackendAnthropic(cliente, modelo='m', esforco='low', max_tokens=123).completar('SYS', MSGS)
         [kw] = cliente.chamadas
         assert kw['model'] == 'm' and kw['max_tokens'] == 123
         assert kw['output_config'] == {'effort': 'low'}
         assert kw['betas'] == [BETA_FALLBACK] and kw['fallbacks'] == 'default'
-        assert kw['system'] == 'SYS' and kw['messages'] == [{'role': 'user', 'content': 'MSG'}]
+        assert kw['system'] == 'SYS' and kw['messages'] == MSGS
         assert 'temperature' not in kw
 
     def test_junta_os_blocos_de_texto_e_ignora_os_demais(self):
         blocos = [SimpleNamespace(type='fallback'), SimpleNamespace(type='text', text='parte 1 '),
                   SimpleNamespace(type='text', text='parte 2')]
-        saida = BackendAnthropic(ClienteFake(mensagem(blocos=blocos))).completar('s', 'm')
+        saida = BackendAnthropic(ClienteFake(mensagem(blocos=blocos))).completar('s', U)
         assert saida == SaidaModelo('parte 1 parte 2', 'claude-opus-5-5', 'end_turn',
-                                    {'input_tokens': 1200, 'output_tokens': 300})
+                                    {'input_tokens': 1200, 'output_tokens': 300}, conteudo_assistente=blocos)
 
     def test_recusa(self):
         msg = mensagem('', stop_reason='refusal', stop_details=SimpleNamespace(category='cyber'))
         with pytest.raises(ErroGeracao, match='cyber'):
-            BackendAnthropic(ClienteFake(msg)).completar('s', 'm')
+            BackendAnthropic(ClienteFake(msg)).completar('s', U)
 
     def test_truncada(self):
         with pytest.raises(ErroGeracao, match='truncada'):
-            BackendAnthropic(ClienteFake(mensagem('```gobr', stop_reason='max_tokens'))).completar('s', 'm')
+            BackendAnthropic(ClienteFake(mensagem('```gobr', stop_reason='max_tokens'))).completar('s', U)
+
+    def test_devolve_o_conteudo_original_para_a_rodada_de_correcao(self):
+        blocos = [SimpleNamespace(type='thinking', thinking='', signature='sig'),
+                  SimpleNamespace(type='text', text='Sem citação.\n```gobr\n' + DSL_FILIAL + '\n```')]
+        saida = BackendAnthropic(ClienteFake(mensagem(blocos=blocos))).completar('s', U)
+        assert saida.conteudo_assistente is blocos
+
+    def test_correcao_reenvia_os_blocos_de_raciocinio_sem_alteracao(self):
+        blocos = [SimpleNamespace(type='thinking', thinking='', signature='sig'),
+                  SimpleNamespace(type='text', text='Sem citação.\n```gobr\n' + DSL_FILIAL + '\n```')]
+        cliente = ClienteFake(mensagem(blocos=blocos))
+        Gerador(BackendAnthropic(cliente)).gerar(contexto())
+        assert len(cliente.chamadas) == 2
+        assistente = cliente.chamadas[1]['messages'][1]
+        assert assistente['role'] == 'assistant' and assistente['content'] is blocos
 
     def test_credencial_invalida_vira_erro_de_geracao(self):
         anthropic = pytest.importorskip('anthropic')
@@ -318,7 +429,7 @@ class TestBackendAnthropic:
         req = httpx.Request('POST', 'https://api.anthropic.com/v1/messages')
         erro = anthropic.AuthenticationError('invalid', response=httpx.Response(401, request=req), body=None)
         with pytest.raises(ErroGeracao, match='ANTHROPIC_API_KEY'):
-            BackendAnthropic(ClienteFake(erro=erro)).completar('s', 'm')
+            BackendAnthropic(ClienteFake(erro=erro)).completar('s', U)
 
 
 def test_criar_backend():
@@ -335,7 +446,7 @@ def test_responder_liga_recuperacao_e_geracao():
     ctx, resp = responder('não agendar filiais', rec, Gerador(backend), k_exemplos=1, k_manual=1)
     assert ctx.refs() == ['E1', 'M1']
     assert resp.citacoes_invalidas == ['M9']
-    assert 'não agendar filiais' in backend.chamadas[0][1]
+    assert 'não agendar filiais' in backend.chamadas[0][1][0]['content']
 
 
 def recuperador_fake() -> Recuperador:
