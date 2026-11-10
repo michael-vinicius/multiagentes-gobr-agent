@@ -11,7 +11,8 @@ Para isso o trabalho foi dividido em etapas:
 | 1 | Geração de explicações (regras de negócio) a partir das parametrizações | ✅ concluída | [docs/RELATORIO_ATIVIDADE.md](docs/RELATORIO_ATIVIDADE.md) |
 | 2 | Indexação das explicações (embeddings + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO.md](docs/RELATORIO_INDEXACAO.md) |
 | 3 | Indexação do manual GoBR (extração do PDF + chunks + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO_MANUAL.md](docs/RELATORIO_INDEXACAO_MANUAL.md) |
-| 4 | Agente conversacional com RAG (exemplos + manual GoBR) | ⏳ próximo passo | — |
+| 4 | Fluxo básico de busca com RAG (exemplos + manual → regra GoBR com o Claude) | ✅ concluída | [docs/RELATORIO_RAG.md](docs/RELATORIO_RAG.md) |
+| 5 | Agente conversacional | ⏳ próximo passo | — |
 
 ## Fluxo completo
 
@@ -41,7 +42,13 @@ index/manual/                                           (gerado localmente, fora
       ↓  src/buscar_manual.py
 Pergunta em linguagem natural → top-k trechos do manual (seção, páginas, texto)
 
-Agente (etapa 4): monta a parametrização GoBR usando os exemplos e o manual recuperados
+Regra de negócio em linguagem natural
+      ↓  src/rag.py
+Recuperação nos dois índices → exemplos (E1…E5, sem duplicatas) + trechos do manual (M1…M4)
+      ↓
+Prompt com o contexto numerado → modelo de linguagem (local via Ollama, gratuito; ou Claude pela API)
+      ↓
+Regra em ```gobr``` com citações [E#]/[M#] + checagem das citações e validação estrutural da DSL
 ```
 
 ## Etapa 1 — Explicações
@@ -83,6 +90,15 @@ O manual em PDF é extraído preservando a estrutura (títulos, parágrafos, blo
 - Avaliação com 24 consultas de referência: **21/24 acertos no 1º lugar e 24/24 no top-5** (o mpnet, nas mesmas condições, ficou em 8/24 e 14/24).
 - O manual tem direitos reservados e o repositório é público: o PDF e o índice gerado (`index/manual/`) não são versionados. O índice é gerado localmente a partir do PDF.
 
+## Etapa 4 — Fluxo básico de busca (RAG)
+
+`src/rag.py` liga as duas buscas a um modelo de linguagem. A pergunta do usuário consulta os dois índices; os exemplos repetidos são descartados (as 1700 parametrizações têm só 1208 corpos distintos); o contexto vai para o modelo numerado (`E1…` para exemplos, `M1…` para o manual), e a resposta volta com a regra num bloco `gobr`, as fontes citadas e os pontos de atenção. Antes de devolver, o fluxo confere se as citações existem no contexto e valida a estrutura da DSL com o mesmo classificador de cláusulas da etapa 1.
+
+A geração é plugável. O padrão é um modelo **local e gratuito** (`qwen2.5:7b` via [Ollama](https://ollama.com)), sem chave e sem custo. O Claude (`claude-opus-5-5`, pela API Anthropic) é a opção paga: `--backend anthropic`.
+
+- 65 testes automatizados (`pytest`): 57 unitários, sem rede nem modelos, e 8 de integração com os índices reais. Um deles é um `xfail` estrito que registra uma limitação conhecida do índice de exemplos.
+- Avaliação ponta a ponta com 6 pedidos de referência (`src/avaliar_rag.py`), com o modelo local: a busca leva as cláusulas necessárias ao contexto em 4 de 6 casos, e **2 de 6** regras geradas saem completamente certas (sintaxe, validação e citações). O gargalo é o modelo de 7B, que erra a semântica mesmo com o material certo no contexto. Detalhes e limitações no [relatório](docs/RELATORIO_RAG.md).
+
 ## Como executar
 
 Requer Python 3.10+.
@@ -110,6 +126,20 @@ python src/indexar_manual.py <caminho>/govendas-rules.pdf
 # Buscar no manual e avaliar
 python src/buscar_manual.py "como evitar que televendas e campo atendam o cliente no mesmo dia" -k 3
 python src/avaliar_busca_manual.py
+
+# Etapa 4 — RAG (precisa dos dois índices)
+# modelo local, gratuito: instale o Ollama (Windows: winget install Ollama.Ollama) e baixe o modelo (~4,7 GB)
+ollama pull qwen2.5:7b
+python src/rag.py "clientes inadimplentes não devem ser agendados"
+python src/rag.py "clientes inadimplentes não devem ser agendados" --so-contexto   # só mostra o prompt montado
+python src/avaliar_rag.py
+
+# alternativa paga: Claude pela API (defina ANTHROPIC_API_KEY)
+python src/rag.py "clientes inadimplentes não devem ser agendados" --backend anthropic
+
+# Testes (os de integração são pulados se o índice do manual não existir)
+pip install -r requirements-dev.txt
+python -m pytest
 ```
 
 Na primeira execução os modelos de embeddings são baixados e ficam em cache (≈ 220 MB para as explicações e ≈ 2,2 GB para o manual).
@@ -132,6 +162,10 @@ for r in indice.buscar('não agendar clientes inadimplentes', k=3):
 manual = IndiceManual(Path('index/manual'))
 for r in manual.buscar('filtro para clientes inadimplentes', k=2):
     print(r['score'], r['secao'], r['titulo'], r['texto'])
+
+from rag import carregar_recuperador, criar_backend, Gerador, responder
+ctx, resp = responder('não agendar clientes inadimplentes', carregar_recuperador(), Gerador(criar_backend('ollama')))
+print(resp.texto, resp.blocos_gobr, resp.citacoes, resp.dsl_valida)
 ```
 
 ## Estrutura do repositório
@@ -141,5 +175,6 @@ data/           datasets gerados na etapa 1 (JSONL completo, JSONL para embeddin
 docs/           relatórios de cada atividade
 index/          índice vetorial das explicações (etapa 2)
 index/manual/   índice do manual (etapa 3), gerado localmente e fora do controle de versão
-src/            scripts de geração, extração, indexação, busca e avaliação
+src/            scripts de geração, extração, indexação, busca, RAG e avaliação
+tests/          testes automatizados (pytest)
 ```
