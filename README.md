@@ -11,7 +11,7 @@ Para isso o trabalho foi dividido em etapas:
 | 1 | Geração de explicações (regras de negócio) a partir das parametrizações | ✅ concluída | [docs/RELATORIO_ATIVIDADE.md](docs/RELATORIO_ATIVIDADE.md) |
 | 2 | Indexação das explicações (embeddings + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO.md](docs/RELATORIO_INDEXACAO.md) |
 | 3 | Indexação do manual GoBR (extração do PDF + chunks + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO_MANUAL.md](docs/RELATORIO_INDEXACAO_MANUAL.md) |
-| 4 | Fluxo básico de busca com RAG (exemplos + manual → regra GoBR com o Claude) | ✅ concluída | [docs/RELATORIO_RAG.md](docs/RELATORIO_RAG.md) |
+| 4 | Fluxo básico de busca com RAG (exemplos + manual → regra GoBR conferida) | ✅ concluída | [docs/RELATORIO_RAG.md](docs/RELATORIO_RAG.md) |
 | 5 | Agente conversacional | ⏳ próximo passo | — |
 
 ## Fluxo completo
@@ -43,12 +43,14 @@ index/manual/                                           (gerado localmente, fora
 Pergunta em linguagem natural → top-k trechos do manual (seção, páginas, texto)
 
 Regra de negócio em linguagem natural
-      ↓  src/rag.py
-Recuperação nos dois índices → exemplos (E1…E5, sem duplicatas) + trechos do manual (M1…M4)
+      ↓  src/rag.py + src/busca_hibrida.py
+Busca híbrida (vetores + BM25) nos dois índices → exemplos (E1…E5, sem duplicatas) + trechos do manual (M1…M4)
       ↓
 Prompt com o contexto numerado → modelo de linguagem (local via Ollama, gratuito; ou Claude pela API)
+      ↓  src/catalogo_gobr.py
+Regra em ```gobr``` com citações [E#]/[M#] → conferida (estrutura, condições × catálogo, citações)
       ↓
-Regra em ```gobr``` com citações [E#]/[M#] + checagem das citações e validação estrutural da DSL
+Se houver problema: uma rodada de correção com a lista do que corrigir; vale a tentativa com menos problemas
 ```
 
 ## Etapa 1 — Explicações
@@ -92,12 +94,21 @@ O manual em PDF é extraído preservando a estrutura (títulos, parágrafos, blo
 
 ## Etapa 4 — Fluxo básico de busca (RAG)
 
-`src/rag.py` liga as duas buscas a um modelo de linguagem. A pergunta do usuário consulta os dois índices; os exemplos repetidos são descartados (as 1700 parametrizações têm só 1208 corpos distintos); o contexto vai para o modelo numerado (`E1…` para exemplos, `M1…` para o manual), e a resposta volta com a regra num bloco `gobr`, as fontes citadas e os pontos de atenção. Antes de devolver, o fluxo confere se as citações existem no contexto e valida a estrutura da DSL com o mesmo classificador de cláusulas da etapa 1.
+`src/rag.py` liga as duas buscas a um modelo de linguagem:
 
-A geração é plugável. O padrão é um modelo **local e gratuito** (`qwen2.5:7b` via [Ollama](https://ollama.com)), sem chave e sem custo. O Claude (`claude-opus-5-5`, pela API Anthropic) é a opção paga: `--backend anthropic`.
+1. **Busca híbrida** (`src/busca_hibrida.py`): os vetores das etapas 2 e 3 são combinados com BM25 (palavras-chave) por *Reciprocal Rank Fusion*. Os exemplos repetidos são descartados (as 1700 parametrizações têm só 1208 corpos distintos).
+2. **Prompt** com o contexto numerado (`E1…` exemplos, `M1…` manual) e o pedido no fim.
+3. **Geração** plugável: por padrão um modelo **local e gratuito** (`qwen2.5:7b` via [Ollama](https://ollama.com)); o Claude (`claude-opus-5-5`) é a opção paga, com `--backend anthropic`.
+4. **Conferência** da regra: estrutura (classificador da etapa 1), cada condição contra um catálogo das regras reais e do manual (`src/catalogo_gobr.py`) e citações. Se houver problema, o modelo recebe a lista do que corrigir uma vez, e vale a tentativa com menos problemas.
 
-- 65 testes automatizados (`pytest`): 57 unitários, sem rede nem modelos, e 8 de integração com os índices reais. Um deles é um `xfail` estrito que registra uma limitação conhecida do índice de exemplos.
-- Avaliação ponta a ponta com 6 pedidos de referência (`src/avaliar_rag.py`), com o modelo local: a busca leva as cláusulas necessárias ao contexto em 4 de 6 casos, e **2 de 6** regras geradas saem completamente certas (sintaxe, validação e citações). O gargalo é o modelo de 7B, que erra a semântica mesmo com o material certo no contexto. Detalhes e limitações no [relatório](docs/RELATORIO_RAG.md).
+Resultados, com o modelo local:
+- Em 11 pedidos de teste, nunca usados para ajustar o fluxo, a regra sai inteiramente certa em **10** (a versão inicial acertava **4**). Pelo gabarito original, sem duas correções feitas depois de ver resultados, a sequência é 4 → 8.
+- A repetição da rodada final reproduziu as 17 respostas exatamente. Entre rodadas com sequências diferentes de chamadas, o modelo local varia até 2 casos, por isso diferenças pequenas entre versões não são conclusivas.
+- A busca híbrida levou as cláusulas necessárias ao contexto em 10 de 11 casos (8 só com vetores).
+- 118 testes automatizados (`pytest`) passam, mais 1 `xfail` documentado.
+- As avaliações das etapas 2 e 3 foram rodadas de novo e reproduzem os números publicados.
+
+Detalhes, falhas restantes e limitações no [relatório](docs/RELATORIO_RAG.md).
 
 ## Como executar
 
@@ -132,7 +143,9 @@ python src/avaliar_busca_manual.py
 ollama pull qwen2.5:7b
 python src/rag.py "clientes inadimplentes não devem ser agendados"
 python src/rag.py "clientes inadimplentes não devem ser agendados" --so-contexto   # só mostra o prompt montado
-python src/avaliar_rag.py
+python src/avaliar_rag.py                    # 17 casos (ajuste + teste), ~20 min com o modelo local
+python src/avaliar_rag.py --so-busca         # só a cobertura da busca, em segundos
+python src/avaliar_rag.py --busca vetorial --tentativas 1 --sem-catalogo   # versão sem as melhorias, para comparar
 
 # alternativa paga: Claude pela API (defina ANTHROPIC_API_KEY)
 python src/rag.py "clientes inadimplentes não devem ser agendados" --backend anthropic
@@ -163,9 +176,11 @@ manual = IndiceManual(Path('index/manual'))
 for r in manual.buscar('filtro para clientes inadimplentes', k=2):
     print(r['score'], r['secao'], r['titulo'], r['texto'])
 
+from catalogo_gobr import carregar_catalogo
 from rag import carregar_recuperador, criar_backend, Gerador, responder
-ctx, resp = responder('não agendar clientes inadimplentes', carregar_recuperador(), Gerador(criar_backend('ollama')))
-print(resp.texto, resp.blocos_gobr, resp.citacoes, resp.dsl_valida)
+gerador = Gerador(criar_backend('ollama'), carregar_catalogo())   # ou criar_backend('anthropic')
+ctx, resp = responder('não agendar clientes inadimplentes', carregar_recuperador(), gerador)
+print(resp.texto, resp.blocos_gobr, resp.citacoes, resp.dsl_valida, resp.tentativas)
 ```
 
 ## Estrutura do repositório
@@ -175,6 +190,6 @@ data/           datasets gerados na etapa 1 (JSONL completo, JSONL para embeddin
 docs/           relatórios de cada atividade
 index/          índice vetorial das explicações (etapa 2)
 index/manual/   índice do manual (etapa 3), gerado localmente e fora do controle de versão
-src/            scripts de geração, extração, indexação, busca, RAG e avaliação
+src/            scripts de geração, extração, indexação, busca (vetorial e híbrida), RAG, catálogo e avaliação
 tests/          testes automatizados (pytest)
 ```
