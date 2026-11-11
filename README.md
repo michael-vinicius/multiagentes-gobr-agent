@@ -1,17 +1,44 @@
-# Geração de Explicações de Parametrizações GoBR
+# Agente GoBR — Explicações e Indexação de Parametrizações
 
-Atividade da disciplina de **Multiagentes**: geração de explicações (regras de negócio) a partir das parametrizações.
+Projeto da disciplina de **Multiagentes**.
 
-Este projeto converte cada bloco `parametros` escrito na DSL **GoBR** em uma explicação em linguagem de negócio, mantendo o bloco original para rastreabilidade. As explicações são a base para a etapa seguinte do projeto: embeddings, recuperação de exemplos semelhantes (RAG) e o agente conversacional.
+O objetivo final é um agente conversacional que recebe uma regra de negócio descrita em linguagem natural (por exemplo, “clientes sem compra há 90 dias devem ser visitados a cada 14 dias”) e ajuda a escrevê-la na DSL **GoBR**, usando como referência parametrizações reais já existentes.
 
-## Resultado
+Para isso o trabalho foi dividido em etapas:
 
-| Item | Valor |
-|---|---|
-| Arquivos `.gobr` processados | 246 |
-| Parametrizações convertidas | 1700 |
-| Cláusulas não classificadas | 0 |
-| Blocos marcados para revisão | 1 (`regra_032.gobr`: parêntese sem fechamento na fonte) |
+| # | Etapa | Status | Relatório |
+|---|---|---|---|
+| 1 | Geração de explicações (regras de negócio) a partir das parametrizações | ✅ concluída | [docs/RELATORIO_ATIVIDADE.md](docs/RELATORIO_ATIVIDADE.md) |
+| 2 | Indexação das explicações (embeddings + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO.md](docs/RELATORIO_INDEXACAO.md) |
+| 3 | Agente conversacional com RAG (exemplos + manual GoBR) | ⏳ próximo passo | — |
+
+## Fluxo completo
+
+```text
+Arquivos .gobr (246)
+      ↓  src/gerar_explicacoes_gobr.py
+Separação dos blocos `parametros` → alvo, filtros temporais, condições, ações
+      ↓
+Explicação em linguagem de negócio + validação          (1700 parametrizações)
+      ↓
+data/parametrizacoes_explicadas.jsonl                   (dataset completo, com DSL original)
+data/parametrizacoes_para_embeddings.jsonl              (versão enxuta: id + texto)
+      ↓  src/indexar_explicacoes.py
+Embeddings multilíngues (384 dim, cosseno)
+      ↓
+index/                                                  (vetores + metadados + manifesto)
+      ↓  src/buscar_explicacoes.py
+Consulta em linguagem natural → top-k parametrizações semelhantes (+ blocos vizinhos)
+      ↓
+Agente (etapa 3): monta a parametrização GoBR usando os exemplos recuperados
+```
+
+## Etapa 1 — Explicações
+
+Cada bloco `parametros` dos arquivos GoBR foi convertido em uma explicação curta, uma explicação detalhada e um texto próprio para embedding, mantendo a DSL original para rastreabilidade.
+
+- 246 arquivos processados, 1700 parametrizações convertidas, nenhuma cláusula desconhecida.
+- 1 bloco marcado para revisão (`regra_032.gobr`, parêntese sem fechamento na fonte).
 
 Exemplo:
 
@@ -28,38 +55,58 @@ parametros "Não agendar filiais":
 | `explicacao_curta` | Clientes que são filiais: não agendar esses clientes. |
 | `texto_embedding` | Não agendar filiais. Clientes que são filiais: não agendar esses clientes. Alvo: clientes vinculados ao time “televendas”. |
 
-Metodologia, decisões, validação e inconsistências encontradas estão em [docs/RELATORIO_ATIVIDADE.md](docs/RELATORIO_ATIVIDADE.md).
+## Etapa 2 — Indexação
 
-## Fluxo
+O campo `texto` das 1700 explicações foi transformado em vetores com o modelo `paraphrase-multilingual-MiniLM-L12-v2`, executado localmente (sem GPU e sem chave de API). A busca compara a consulta do usuário com todos os vetores pela similaridade de cosseno e devolve as regras mais próximas, com a DSL original.
 
-```text
-Arquivos .gobr
-      ↓  separação dos blocos `parametros` (com junção de cláusulas em várias linhas)
-Classificação das cláusulas: alvo · filtros temporais · condições · ações
-      ↓  conversão da DSL para português de negócio
-Explicação detalhada · explicação curta · texto para embedding
-      ↓  validação estrutural (não corrige a fonte, apenas sinaliza)
-data/  (JSONL completo · JSONL para embeddings · Markdown legível)
-```
-
-## Estrutura
-
-```text
-src/gerar_explicacoes_gobr.py                 gerador (somente biblioteca padrão do Python)
-data/parametrizacoes_explicadas.jsonl         dataset completo: DSL original, alvo, condições, ações, explicações, validação
-data/parametrizacoes_para_embeddings.jsonl    versão enxuta (id, arquivo, ordem, nome, texto) para indexação vetorial
-data/parametrizacoes_explicadas.md            versão para leitura humana, agrupada por arquivo
-docs/RELATORIO_ATIVIDADE.md                   relatório da atividade
-```
+- 1700/1700 textos indexados (≈ 2,9 MB).
+- Avaliação com 12 consultas de referência: **8/12 acertos no 1º lugar e 9/12 no top-5**.
+- Limitações conhecidas: negação (“atender” × “não agendar”), valores abreviados (`CONS. FINAL`) e intervalos e frequências numéricos. As melhorias propostas estão no relatório.
 
 ## Como executar
 
-Requer Python 3 (testado com 3.12) e nenhuma dependência externa.
+Requer Python 3.10+.
 
 ```bash
+python -m venv .venv
+.venv/Scripts/activate            # Windows  (Linux/macOS: source .venv/bin/activate)
+pip install -r requirements.txt
+
+# Etapa 1 — gerar explicações (precisa da pasta com os arquivos .gobr; as saídas vão para data/)
 python src/gerar_explicacoes_gobr.py <pasta_com_arquivos_gobr>
+
+# Etapa 2 — gerar o índice
+python src/indexar_explicacoes.py
+
+# Buscar regras semelhantes
+python src/buscar_explicacoes.py "clientes sem comprar há mais de 90 dias" -k 5 --contexto 1
+
+# Avaliar a qualidade da busca
+python src/avaliar_busca.py
 ```
 
-Por padrão as três saídas são gravadas em `data/`. Os caminhos podem ser trocados com `--jsonl`, `--md` e `--embeddings-jsonl`.
+Na primeira execução o modelo de embeddings (≈ 220 MB) é baixado e fica em cache.
 
 > Os arquivos `.gobr` de origem não fazem parte do repositório. O bloco original de cada parametrização está preservado no campo `dsl_original` do JSONL.
+
+Para usar a busca dentro do agente:
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, 'src')
+from buscar_explicacoes import IndiceExplicacoes
+
+indice = IndiceExplicacoes(Path('index'), Path('data/parametrizacoes_explicadas.jsonl'))
+for r in indice.buscar('não agendar clientes inadimplentes', k=3):
+    print(r['score'], r['nome_regra'], r['dsl_original'])
+```
+
+## Estrutura do repositório
+
+```text
+data/    datasets gerados na etapa 1 (JSONL completo, JSONL para embeddings, Markdown)
+docs/    relatórios de cada atividade
+index/   índice vetorial gerado na etapa 2
+src/     scripts de geração, indexação, busca e avaliação
+```
