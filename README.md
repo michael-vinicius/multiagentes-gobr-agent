@@ -132,8 +132,8 @@ Resultados (`src/avaliar_agente.py`, usuário simulado, comparação semântica 
 
 - os 3 exemplos do professor como PDF e como imagem (OCR) e 4 cenários próprios: **10/10 arquivos com 100% das decisões iguais às do gabarito**;
 - a 1ª rodada deu 100% em 7/10 e expôs quatro defeitos de interpretação, corrigidos com testes de regressão;
-- 61 de 63 blocos escritos pelo modelo com RAG (14 depois da correção com as divergências); 2 vieram do molde, com aviso;
-- 173 testes automatizados passam; custo zero (qwen2.5:7b local + OCR local), de 3 a 8 minutos por conversa numa GPU de 4 GB.
+- 62 de 63 blocos escritos pelo modelo com RAG (12 depois da correção com as divergências); 1 veio do molde, com aviso;
+- 174 testes automatizados passam; custo zero (qwen2.5:7b local + OCR local), de 4 a 9 minutos por conversa numa GPU de 4 GB.
 
 Detalhes, avaliação, ressalvas e limitações no [relatório](docs/RELATORIO_AGENTE.md).
 

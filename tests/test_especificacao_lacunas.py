@@ -220,3 +220,12 @@ def test_nomes_repetidos_ficam_unicos():
     blocos, *_ = planejar(e, {'baixados': Decisao(opcao=1), 'inadimplentes': Decisao(opcao=0),
                               'prospects': Decisao(opcao=0)})
     assert [b.nome for b in blocos] == ['Ativos', 'Ativos (2)']
+
+
+def test_filtro_e_excecao_ao_mesmo_tempo_fica_onde_o_texto_manda():
+    # regressão (Maxlub): o bloqueio de rota veio com rota_semana em filtros e em exceto
+    e = Especificacao('t', 'televendas', '', [Item('Não agendar clientes em rota', 'nao_agendar', 1,
+                                                   filtros=['rota_semana'], exceto=['rota_semana'])])
+    conferir_especificacao(e, {1: 'Não agendar clientes em rota. Não conflitar com a regra do externo → Todos os '
+                                  'clientes que esta na rota de visita do externo não pode ser agendado'})
+    assert e.itens[0].filtros == ['rota_semana'] and e.itens[0].exceto == []

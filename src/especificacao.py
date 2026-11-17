@@ -351,7 +351,12 @@ def conferir_filtros(it: Item, texto: str, avisos: List[str]) -> None:
     citados = classificar_filtros(texto)
     for f in FILTROS:
         lugar = citados.get(f)
-        antes = ('filtros' if f in it.filtros else '') or ('exceto' if f in it.exceto else '')
+        if f in it.filtros and f in it.exceto:  # contraditório: fica só onde o texto manda
+            fica = 'exceto' if lugar == 'exclui' else 'filtros'
+            (it.filtros if fica == 'exceto' else it.exceto).remove(f)
+            avisos.append(f'"{it.nome}": "{f}" estava como filtro e como exceção; ficou só como '
+                          f'{"exceção" if fica == "exceto" else "filtro"}, como diz o texto')
+        antes =('filtros' if f in it.filtros else '') or ('exceto' if f in it.exceto else '')
         depois = {'inclui': 'filtros', 'exclui': 'exceto', None: ''}[lugar]
         if it.acao == 'nao_agendar' and depois == 'exceto' and not antes:
             depois = ''  # em bloqueio, só mexe no que o modelo marcou

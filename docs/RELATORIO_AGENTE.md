@@ -11,7 +11,7 @@ O enunciado pede um agente de conversação que ajude o analista a escrever regr
 
 Restrição deste trabalho: **custo zero**. O modelo de linguagem é o `qwen2.5:7b` local (Ollama), que **não lê imagens**. O Claude continua disponível como opção paga (`--backend anthropic`), mas não foi usado.
 
-**Resultado:** nos 3 exemplos do professor (como PDF e como imagem) e nos 4 cenários próprios, o arquivo gerado decide igual ao gabarito para **100% dos 6.432 clientes sintéticos** (rodada v2, 10/10 casos). A primeira rodada (v1) deu 100% em 7 de 10 casos e expôs quatro defeitos, corrigidos antes da v2 (seção 5.2). Custo zero: tudo roda localmente, de 3 a 8 minutos por conversa numa GTX 1650.
+**Resultado:** nos 3 exemplos do professor (como PDF e como imagem) e nos 4 cenários próprios, o arquivo gerado decide igual ao gabarito para **100% dos 6.432 clientes sintéticos** (rodadas v2 e v3, 10/10 casos). A primeira rodada (v1) deu 100% em 7 de 10 casos e expôs quatro defeitos, corrigidos antes da v2 (seção 5.2). Custo zero: tudo roda localmente, de 4 a 9 minutos por conversa numa GTX 1650.
 
 ## 2. O fluxo
 
@@ -164,7 +164,7 @@ Convenções assumidas (o manual não define os limites): `recencia … em N dia
 
 ## 4. Testes
 
-`python -m pytest`: **173 testes passando (1 xfail registrado na etapa 4)**. Os novos testes usam dublês no lugar do modelo, do RAG e do OCR:
+`python -m pytest`: **174 testes passando (1 xfail registrado na etapa 4)**. Os novos testes usam dublês no lugar do modelo, do RAG e do OCR:
 
 | Arquivo | O que cobre |
 |---|---|
@@ -196,20 +196,22 @@ Métricas por caso: **arquivo** = decisões do arquivo iguais às do gabarito; *
 
 Correções (com testes de regressão): o item é ligado à linha cujo texto começa com o nome dele; o vizinho ±1 de um número escrito volta ao número escrito; linha sem público, número nem ação é informação; a pergunta repetida explica que "ok" não a resolve e que, sem resposta, a regra fica fora. Os cenários C2 e C4 deixaram de ser inéditos depois disso: as correções são gerais (nenhuma cita o cenário), mas foram motivadas por eles.
 
-### 5.3 Rodada v2
+### 5.3 Rodada final (v3)
+
+A v2 (depois das correções da seção 5.2) já deu 100% nos 10 casos. Ela revelou ainda uma inconsistência só de exibição: no Maxlub, o modelo pôs "rota" ao mesmo tempo como filtro e como exceção do bloqueio de rota (o plano saiu certo, mas o resumo mostrado ao analista ficava contraditório). A conferência passou a manter só o lado que o texto indica, e a v3 é a avaliação completa do código entregue:
 
 | Caso | Entrada | Arquivo | Plano | Estrutura | Modelo / molde | Corrigidos | Perguntas | Tempo |
 |---|---|---|---|---|---|---|---|---|
-| Infinitto | PDF | 100% | 100% | 5/5 | 5 / 0 | 1 | 3 | 198 s |
-| Maxlub | PDF | 100% | 100% | 10/10 | 10 / 0 | 1 | 2 | 429 s |
-| V1 Vidros | PDF | 100% | 100% | 5/5 | 5 / 0 | 2 | 1 | 282 s |
-| Infinitto | imagem (OCR) | 100% | 100% | 5/5 | 5 / 0 | 1 | 4 | 219 s |
-| Maxlub | imagem (OCR) | 100% | 100% | 10/10 | 10 / 0 | 1 | 2 | 447 s |
-| V1 Vidros | imagem (OCR) | 100% | 100% | 5/5 | 5 / 0 | 2 | 1 | 295 s |
-| C1 texto corrido | texto | 100% | 100% | 6/6 | 6 / 0 | 0 | 1 | 218 s |
-| C2 campo, faixa descoberta | texto | 100% | 100% | 7/7 | 6 / 1 | 3 | 4 | 432 s |
-| C3 curva A | texto | 100% | — ¹ | 5/5 | 4 / 1 | 1 | 3 | 206 s |
-| C4 exceção parcial | texto | 100% | 100% | 5/5 | 5 / 0 | 2 | 1 | 291 s |
+| Infinitto | PDF | 100% | 100% | 5/5 | 5 / 0 | 1 | 3 | 277 s |
+| Maxlub | PDF | 100% | 100% | 10/10 | 10 / 0 | 1 | 2 | 562 s |
+| V1 Vidros | PDF | 100% | 100% | 5/5 | 5 / 0 | 2 | 1 | 377 s |
+| Infinitto | imagem (OCR) | 100% | 100% | 5/5 | 5 / 0 | 1 | 4 | 277 s |
+| Maxlub | imagem (OCR) | 100% | 100% | 10/10 | 10 / 0 | 1 | 2 | 549 s |
+| V1 Vidros | imagem (OCR) | 100% | 100% | 5/5 | 5 / 0 | 2 | 1 | 278 s |
+| C1 texto corrido | texto | 100% | 100% | 6/6 | 6 / 0 | 0 | 1 | 306 s |
+| C2 campo, faixa descoberta | texto | 100% | 100% | 7/7 | 6 / 1 | 3 | 4 | 465 s |
+| C3 curva A | texto | 100% | — ¹ | 5/5 | 5 / 0 | 0 | 3 | 227 s |
+| C4 exceção parcial | texto | 100% | 100% | 5/5 | 5 / 0 | 1 | 1 | 314 s |
 
 ¹ O bloco da curva A não tem molde (condição própria), então não há plano completo para simular; o arquivo final foi comparado com o gabarito normalmente.
 
@@ -217,7 +219,7 @@ Leitura:
 
 - **Perguntas proativas** apareceram em todos os casos e são as lacunas reais: no Maxlub, ninguém disse o que fazer com quem está há mais de 180 dias sem comprar, e faltava o bloqueio de baixados na Receita (os dois estão no gabarito); no C2, a faixa de 31 a 60 dias não tinha regra e "Perdidos" não tinha frequência; no C3, a prioridade entre curva A e recência.
 - **Avisos** mostram o que o código corrigiu do modelo: no Maxlub, seis exceções de rota que o modelo tinha tornado filtros positivos, o filtro de prospect esquecido, a "capacidade de atendimento" fora do escopo e a exceção repetida trocada por um bloqueio único.
-- **O modelo escreveu 61 dos 63 blocos** com RAG; 14 só acertaram depois de receber as divergências do verificador; 2 (C2 e C3) erraram duas vezes e entraram pelo molde, com aviso.
+- **O modelo escreveu 62 dos 63 blocos** com RAG; 12 só acertaram depois de receber as divergências do verificador; 1 (C2) errou duas vezes e entrou pelo molde, com aviso. Isso varia entre execuções: na v2 foram 61 de 63 (molde no C2 e no C3).
 
 ### 5.4 O que esses números não dizem
 
@@ -232,7 +234,7 @@ Leitura:
 - **Cobertura da verificação.** Condições fora do subconjunto do simulador não são verificadas semanticamente; o agente avisa ("não verificado") em vez de esconder.
 - **Escopo da geração.** O agente escreve `time` e `parametros` (frequência e bloqueios). Carteiras, alertas e outras partes do GoBR ficam de fora.
 - **Convenções de limite.** O manual não define se "em 60 dias" inclui o dia 60; o simulador assume que sim, e os gabaritos são compatíveis com isso.
-- **Tempo.** De 3 a 8 minutos por conversa numa GPU de 4 GB, quase todo no modelo (interpretação e redação dos blocos com RAG). Com o Claude (`--backend anthropic`) seria mais rápido, mas pago.
+- **Tempo.** De 4 a 9 minutos por conversa numa GPU de 4 GB, quase todo no modelo (interpretação e redação dos blocos com RAG). Com o Claude (`--backend anthropic`) seria mais rápido, mas pago.
 - **Avaliação pequena.** 3 exemplos + 4 cenários, usuário simulado, sugestões desenhadas com os exemplos à vista (seção 5.4).
 
 ## 7. Arquivos
