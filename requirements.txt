@@ -3,3 +3,7 @@ fastembed>=0.4,<1
 numpy>=1.26
 pdfplumber>=0.11,<1
 tokenizers>=0.15,<1
+langgraph>=1.2,<2
+rapidocr>=3.10,<4
+pypdfium2>=4
+pillow>=10

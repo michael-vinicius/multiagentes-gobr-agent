@@ -10,3 +10,6 @@ venv/
 govendas-rules.pdf
 index/manual/
 .pytest_cache/
+
+# saídas das avaliações (derivadas dos exemplos de clientes)
+resultados/

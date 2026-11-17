@@ -2,7 +2,7 @@
 
 Projeto da disciplina de **Multiagentes**.
 
-O objetivo final é um agente conversacional que recebe uma regra de negócio descrita em linguagem natural (por exemplo, “clientes sem compra há 90 dias devem ser visitados a cada 14 dias”) e ajuda a escrevê-la na DSL **GoBR**, usando como referência parametrizações reais já existentes.
+O objetivo final é um agente conversacional que recebe as regras de negócio descritas em linguagem natural ou numa imagem (mapa mental, PDF) (por exemplo, “clientes sem compra há 90 dias devem ser visitados a cada 14 dias”) e ajuda a escrevê-la na DSL **GoBR**, usando como referência parametrizações reais já existentes.
 
 Para isso o trabalho foi dividido em etapas:
 
@@ -12,7 +12,7 @@ Para isso o trabalho foi dividido em etapas:
 | 2 | Indexação das explicações (embeddings + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO.md](docs/RELATORIO_INDEXACAO.md) |
 | 3 | Indexação do manual GoBR (extração do PDF + chunks + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO_MANUAL.md](docs/RELATORIO_INDEXACAO_MANUAL.md) |
 | 4 | Fluxo básico de busca com RAG (exemplos + manual → regra GoBR conferida) | ✅ concluída | [docs/RELATORIO_RAG.md](docs/RELATORIO_RAG.md) |
-| 5 | Agente conversacional | ⏳ próximo passo | — |
+| 5 | Agente conversacional (LangGraph): imagem/texto → perguntas sobre pontos falhos → arquivo GoBR verificado | ✅ concluída | [docs/RELATORIO_AGENTE.md](docs/RELATORIO_AGENTE.md) |
 
 ## Fluxo completo
 
@@ -110,6 +110,26 @@ Resultados, com o modelo local:
 
 Detalhes, falhas restantes e limitações no [relatório](docs/RELATORIO_RAG.md).
 
+## Etapa 5 — Agente conversacional
+
+`src/agente.py` é um grafo LangGraph que conversa com o analista até entregar o arquivo GoBR completo:
+
+```text
+imagem / PDF / texto
+   ↓ ler_entrada        transcrição local e gratuita: camada de texto do PDF ou OCR (RapidOCR, 2 escalas)
+   ↓ interpretar        modelo (JSON Schema) → especificação estruturada; números e filtros conferidos no texto
+   ↓ revisar            pontos falhos da modelagem comercial (faixas sem regra, exceções repetidas, bloqueios
+   ↓                    ausentes, frequência faltando, sobreposições…) → perguntas com sugestão e motivo
+   ⇅ perguntar          pausa (interrupt) até o analista responder ("1a, 2: 21 dias" ou "ok")
+   ↓ planejar           blocos na ordem em que o GoBR os aplica (a 1ª regra que pega o cliente vale)
+   ↓ redigir_bloco      modelo + RAG da etapa 4, um bloco por vez
+   ↓ verificar_bloco    simulador semântico (~6,4 mil clientes sintéticos); divergiu → correção com as
+   ↓                    divergências; errou de novo → molde determinístico, com aviso
+   ↓ montar/responder   arquivo completo + conferência + resumo; o analista pode pedir ajustes
+```
+
+Detalhes, avaliação e limitações no [relatório](docs/RELATORIO_AGENTE.md).
+
 ## Como executar
 
 Requer Python 3.10+.
@@ -150,6 +170,15 @@ python src/avaliar_rag.py --busca vetorial --tentativas 1 --sem-catalogo   # ver
 # alternativa paga: Claude pela API (defina ANTHROPIC_API_KEY)
 python src/rag.py "clientes inadimplentes não devem ser agendados" --backend anthropic
 
+# Etapa 5 — agente conversacional (precisa dos dois índices e do Ollama)
+python src/agente.py                                   # pergunta a descrição no terminal
+python src/agente.py caminho/RegraCliente.png          # imagem ou PDF (transcrição local, sem custo)
+python src/agente.py "Ativos (compra nos últimos 30 dias) a cada 14 dias. Prospects a cada 7 dias." --salvar regra.gobr
+python src/agente.py regra.pdf --respostas ok fim     # respostas roteirizadas (aceita as sugestões)
+python src/transcrever_entrada.py caminho/Regra.png    # só a transcrição da imagem
+python src/avaliar_agente.py --exemplos <pasta com .pdf + .gobr> --cenarios data/cenarios_agente.json
+python src/avaliar_agente.py --exemplos <pasta> --imagem   # mesmos exemplos enviados como imagem (OCR)
+
 # Testes (os de integração são pulados se o índice do manual não existir)
 pip install -r requirements-dev.txt
 python -m pytest
@@ -186,10 +215,11 @@ print(resp.texto, resp.blocos_gobr, resp.citacoes, resp.dsl_valida, resp.tentati
 ## Estrutura do repositório
 
 ```text
-data/           datasets gerados na etapa 1 (JSONL completo, JSONL para embeddings, Markdown)
+data/           datasets gerados na etapa 1 e os cenários de avaliação do agente (cenarios_agente.json)
 docs/           relatórios de cada atividade
 index/          índice vetorial das explicações (etapa 2)
 index/manual/   índice do manual (etapa 3), gerado localmente e fora do controle de versão
-src/            scripts de geração, extração, indexação, busca (vetorial e híbrida), RAG, catálogo e avaliação
+src/            geração, extração, indexação, busca (vetorial e híbrida), RAG, catálogo, agente (LangGraph),
+                transcrição de imagens, especificação, revisão de lacunas, simulador semântico e avaliações
 tests/          testes automatizados (pytest)
 ```

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "C1-texto-corrido",
+    "objetivo": "descrição em texto corrido (sem imagem), com faixas completas e bloqueio de inadimplentes",
+    "descricao": "Regras do televendas da distribuidora: clientes que compraram nos últimos 45 dias devem ser atendidos a cada 15 dias. Clientes que compraram nos últimos 90 dias mas estão há 45 dias sem comprar devem ser atendidos a cada 7 dias. Clientes há mais de 90 dias sem comprar, a cada 30 dias. Prospects a cada 10 dias. Não ligar para clientes inadimplentes.",
+    "respostas": {"baixados": "a"},
+    "gabarito": "parametros \"Baixados\":\n    do time(\"televendas\")\n    quando status na receita federal definido como baixada\n    nao agendar\n\nparametros \"Inadimplentes\":\n    do time(\"televendas\")\n    quando inadimplentes\n    nao agendar\n\nparametros \"Prospects\":\n    do time(\"televendas\")\n    quando no ciclo de vida prospect com a empresa\n    frequencia de 10 dias\n\nparametros \"Ativos\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 45 dias\n    frequencia de 15 dias\n\nparametros \"Risco\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 90 dias\n    frequencia de 7 dias\n\nparametros \"Inativos\":\n    do time(\"televendas\")\n    quando fora da recencia de positivacao em 90 dias\n    frequencia de 30 dias\n"
+  },
+  {
+    "id": "C2-campo-buraco-sem-frequencia",
+    "objetivo": "equipe de campo, faixa de 31 a 60 dias sem regra (buraco) e uma regra sem frequência; o analista decide",
+    "descricao": "Equipe de campo (visitas presenciais)\nAtivos: compraram nos últimos 30 dias, visita a cada 14 dias\nEsfriando: estão há mais de 60 dias sem comprar, mas compraram nos últimos 120 dias, visita a cada 21 dias\nPerdidos: mais de 120 dias sem compra\nProspects: visita a cada 30 dias",
+    "respostas": {"buraco:.*": "14 dias", "frequencia:.*": "c", "inadimplentes": "b", "baixados": "a", "equipe": "b"},
+    "gabarito": "parametros \"Baixados\":\n    do time(\"campo\")\n    quando status na receita federal definido como baixada\n    nao agendar\n\nparametros \"Inadimplentes\":\n    do time(\"campo\")\n    quando inadimplentes\n    nao agendar\n\nparametros \"Prospects\":\n    do time(\"campo\")\n    quando no ciclo de vida prospect com a empresa\n    frequencia de 30 dias\n\nparametros \"Ativos\":\n    do time(\"campo\")\n    quando recencia de positivacao em 30 dias\n    frequencia de 14 dias\n\nparametros \"Entre 31 e 60\":\n    do time(\"campo\")\n    quando recencia de positivacao em 60 dias\n    frequencia de 14 dias\n\nparametros \"Esfriando\":\n    do time(\"campo\")\n    quando recencia de positivacao em 120 dias\n    frequencia de 21 dias\n\nparametros \"Perdidos\":\n    do time(\"campo\")\n    quando fora da recencia de positivacao em 120 dias\n    frequencia de 28 dias\n"
+  },
+  {
+    "id": "C3-curva-a-prioridade",
+    "objetivo": "condição sem molde (curva A), escrita pelo modelo com RAG, que precisa vir antes das faixas de recência",
+    "descricao": "Atendimento do televendas. Clientes curva A com a empresa: ligar a cada 7 dias. Clientes que compraram nos últimos 60 dias: a cada 14 dias. Clientes que já compraram, mas estão há mais de 60 dias sem comprar: a cada 30 dias. Clientes que nunca compraram não devem ser agendados.",
+    "respostas": {"prioridade:.*": "a", "baixados": "a", "inadimplentes": "a"},
+    "gabarito": "parametros \"Baixados\":\n    do time(\"televendas\")\n    quando status na receita federal definido como baixada\n    nao agendar\n\nparametros \"Prospects\":\n    do time(\"televendas\")\n    quando no ciclo de vida prospect com a empresa\n    nao agendar\n\nparametros \"Curva A\":\n    do time(\"televendas\")\n    quando curva A com a empresa\n    frequencia de 7 dias\n\nparametros \"Ativos\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 60 dias\n    frequencia de 14 dias\n\nparametros \"Inativos\":\n    do time(\"televendas\")\n    quando fora da recencia de positivacao em 60 dias\n    frequencia de 30 dias\n"
+  },
+  {
+    "id": "C4-excecao-parcial",
+    "objetivo": "exceção (inadimplentes) em só uma das regras e faixa final de bloqueio",
+    "descricao": "Ativos (compra nos últimos 30 dias): a cada 14 dias.\nRisco (compraram nos últimos 60 dias, mas estão há mais de 30 dias sem comprar): a cada 7 dias, exceto inadimplentes.\nInativos (mais de 60 dias sem comprar): não agendar.\nProspects: a cada 14 dias.\nAtendimento feito pelo televendas.",
+    "respostas": {"baixados": "a"},
+    "gabarito": "parametros \"Baixados\":\n    do time(\"televendas\")\n    quando status na receita federal definido como baixada\n    nao agendar\n\nparametros \"Prospects\":\n    do time(\"televendas\")\n    quando no ciclo de vida prospect com a empresa\n    frequencia de 14 dias\n\nparametros \"Ativos\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 30 dias\n    frequencia de 14 dias\n\nparametros \"Risco\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 60 dias\n    e fora da recencia de positivacao em 30 dias\n    e adimplentes\n    frequencia de 7 dias\n\nparametros \"Inativos\":\n    do time(\"televendas\")\n    quando fora da recencia de positivacao em 60 dias\n    nao agendar\n"
+  }
+]
