@@ -44,13 +44,44 @@ def test_conferencia_descarta_numero_inventado_e_corrige_faixa_invertida():
         Item('B', 'frequencia', 2, 7, 30, 60),  # faixa invertida
     ])
     ramos = {1: 'A → compraram nos últimos 30 dias → 14 dias', 2: 'B → entre 30 e 60 dias → 7 dias',
-             3: 'C → algo que o modelo ignorou'}
+             3: 'C → algo que o modelo ignorou → 21 dias'}
     conferir_especificacao(e, ramos, 'atendimento por televendas')
     a, b = e.itens
     assert a.frequencia_dias is None and b.comprou_nos_ultimos_dias == 60 and b.sem_comprar_ha_mais_de_dias == 30
     assert e.equipe == 'televendas'
     assert any('10' in av for av in e.avisos) and any('invertida' in av for av in e.avisos)
     assert any('ramo 3' in av for av in e.avisos)
+
+
+def test_conferencia_realinha_itens_deslocados_por_linha_sem_regra():
+    # regressão (cenário C2): a 1ª linha não é regra e o modelo numerou os itens a partir da 1ª regra
+    ramos = {1: 'Equipe de campo (visitas presenciais)', 2: 'Ativos: compraram nos últimos 30 dias, visita a cada 14 dias',
+             3: 'Perdidos: mais de 120 dias sem compra'}
+    e = Especificacao('t', 'campo', '', [Item('Ativos', 'frequencia', 1, 14, 30, None),
+                                         Item('Perdidos', 'frequencia', 2, None, None, 120)])
+    conferir_especificacao(e, ramos)
+    ativos, perdidos = e.itens
+    assert (ativos.ramo, ativos.frequencia_dias, ativos.comprou_nos_ultimos_dias) == (2, 14, 30)
+    assert (perdidos.ramo, perdidos.sem_comprar_ha_mais_de_dias) == (3, 120)
+    assert not any('descartado' in av or 'ramo 1' in av for av in e.avisos)
+
+
+def test_conferencia_troca_vizinho_pelo_numero_escrito():
+    # regressão (Infinitto): "entre 60 e 90 dias" lido como 89
+    e = Especificacao('t', 'nao_informado', '', [Item('Risco', 'frequencia', 1, 7, 89, 60)])
+    conferir_especificacao(e, {1: 'Risco → Clientes com pedidos entre 60 e 90 dias → 7 dias'})
+    assert e.itens[0].comprou_nos_ultimos_dias == 90 and any('trocado por 90' in av for av in e.avisos)
+
+
+def test_linha_sem_publico_numero_nem_acao_nao_vira_regra():
+    # regressão (cenário C4): "Atendimento feito pelo televendas." virou "não agendar todos"
+    e = Especificacao('t', 'nao_informado', '', [Item('Atendimento feito pelo televendas', 'nao_agendar', 1)])
+    conferir_especificacao(e, {1: 'Atendimento feito pelo televendas.'}, 'Atendimento feito pelo televendas.')
+    assert e.itens[0].acao == 'fora_do_escopo' and e.equipe == 'televendas'
+    # com ação escrita continua regra
+    e = Especificacao('t', 'nao_informado', '', [Item('Demais', 'nao_agendar', 1)])
+    conferir_especificacao(e, {1: 'Demais clientes: não agendar'})
+    assert e.itens[0].acao == 'nao_agendar'
 
 
 @pytest.mark.parametrize('texto, esperado', [

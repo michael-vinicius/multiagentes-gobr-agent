@@ -4,7 +4,6 @@ import json
 from types import SimpleNamespace
 from typing import List
 
-import pytest
 
 from agente import Servicos, conversar, criar_grafo, normalizar_bloco, verificar_semantica
 from especificacao import BlocoPlano

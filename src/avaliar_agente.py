@@ -87,6 +87,12 @@ def medir(resultado: Dict[str, Any], gabarito: str) -> Dict[str, Any]:
     }
 
 
+# Respostas do analista nos exemplos do professor quando não há sugestão segura. Só o Infinitto em imagem precisa: o
+# OCR perde o "7 dias" do ramo "Risco de inatividade", o agente pergunta a frequência, e o analista (que está vendo a
+# imagem que ele mesmo enviou) responde. Sem esta resposta a regra fica fora do arquivo (96,3% na rodada v1).
+ROTEIRO_EXEMPLOS = {'RegraInfinittoDesign (imagem)': {r'frequencia:.*': '7 dias'}}
+
+
 def casos_exemplos(pasta: Path, imagem: bool, saida: Path) -> List[Dict[str, Any]]:
     casos = []
     for gobr in sorted(pasta.glob('*.gobr')):
@@ -98,7 +104,8 @@ def casos_exemplos(pasta: Path, imagem: bool, saida: Path) -> List[Dict[str, Any
             import pypdfium2 as pdfium
             entrada = saida / f'{gobr.stem}.png'
             pdfium.PdfDocument(str(pdf))[0].render(scale=2).to_pil().save(entrada)
-        casos.append({'id': f'{gobr.stem}{" (imagem)" if imagem else ""}', 'entrada': str(entrada), 'respostas': {},
+        id_caso = f'{gobr.stem}{" (imagem)" if imagem else ""}'
+        casos.append({'id': id_caso, 'entrada': str(entrada), 'respostas': ROTEIRO_EXEMPLOS.get(id_caso, {}),
                       'gabarito': gobr.read_text(encoding='utf-8')})
     return casos
 

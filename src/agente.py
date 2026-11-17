@@ -28,7 +28,7 @@ from __future__ import annotations
 import operator
 import re
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Sequence, TypedDict
 
@@ -169,6 +169,10 @@ def criar_grafo(servicos: Servicos, checkpointer: Any = None):
             partes += ['Entendi assim:', formatar_entendimento(esp), '']
             if estado.get('avisos'):
                 partes += ['Pontos de atenção:'] + [f'- {a}' for a in estado['avisos']] + ['']
+        else:
+            ultima = estado.get('rodadas', 0) >= MAX_RODADAS_PERGUNTAS - 1
+            partes += ['Estas perguntas não têm sugestão segura, então "ok" não as resolve.'
+                       + (' Sem resposta agora, a regra fica fora do arquivo (com aviso).' if ultima else ''), '']
         partes += ['Antes de escrever as regras, preciso decidir:', formatar_perguntas(_perguntas(estado)), '',
                    'Responda por número e letra (ex.: "1a, 2b, 3: 21 dias"), escreva livremente, ou "ok" para usar as '
                    'sugestões.']
@@ -379,9 +383,9 @@ def dica_de_clausulas(bloco: BlocoPlano) -> str:
     from especificacao import CLAUSULA_FILTRO, DESCRICAO_FILTRO
     dicas = [f'- {DESCRICAO_FILTRO[f]}: `{CLAUSULA_FILTRO[f]}`' for f in bloco.filtros]
     if bloco.comprou_nos_ultimos_dias is not None:
-        dicas.append(f'- comprou nos últimos N dias: `recencia de positivacao em N dias`')
+        dicas.append("- comprou nos últimos N dias: `recencia de positivacao em N dias`")
     if bloco.sem_comprar_ha_mais_de_dias is not None:
-        dicas.append(f'- está há mais de N dias sem comprar: `fora da recencia de positivacao em N dias`')
+        dicas.append("- está há mais de N dias sem comprar: `fora da recencia de positivacao em N dias`")
     if 'inadimplente' in bloco.nao_filtros:
         dicas.append('- exceto inadimplentes: `adimplentes`')
     return ('Cláusulas do manual para este pedido:\n' + '\n'.join(dicas)) if dicas else ''

@@ -218,14 +218,50 @@ def _numeros(texto: str) -> set:
     return {int(n) for n in re.findall(r'\d+', texto)}
 
 
+# sinais de que uma linha é regra (tem número ou verbo de ação); "Atendimento feito pelo televendas." não tem nenhum
+_CARA_DE_REGRA = re.compile(r'\d|agend|frequ|a cada|ligar|bloque', re.I)
+
+
+def _normalizar(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize('NFKD', s.lower())
+    return re.sub(r'\s+', ' ', ''.join(c for c in s if not unicodedata.combining(c))).strip()
+
+
+def alinhar_ramos(esp: Especificacao, ramos: Dict[int, str]) -> None:
+    """Corrige o índice de ramo do modelo pelo nome do item.
+
+    Uma linha sem regra no topo ("Equipe de campo (visitas presenciais)") também é numerada; o modelo de 7B às vezes
+    numera os itens a partir da 1ª regra, e cada item passa a ser conferido contra o texto da linha anterior.
+    """
+    usados = set()
+    for it in esp.itens:
+        nome = _normalizar(it.nome)
+        if not nome:
+            continue
+        atual = _normalizar(ramos.get(it.ramo, ''))
+        if atual.startswith(nome):
+            usados.add(it.ramo)
+            continue
+        candidatos = [n for n, t in ramos.items() if n not in usados and _normalizar(t).startswith(nome)]
+        if len(candidatos) == 1:
+            it.ramo = candidatos[0]
+            it.texto_original = ramos[it.ramo]
+            usados.add(it.ramo)
+
+
 def conferir_especificacao(esp: Especificacao, ramos: Dict[int, str], descricao: str = '') -> None:
     """Correções determinísticas do que o modelo devolveu. Cada correção vira um aviso visível ao analista.
 
-    - número que não aparece no texto do ramo é descartado (o modelo não pode inventar valores);
+    - o item é ligado ao ramo cujo texto começa com o nome dele (o índice do modelo pode estar deslocado);
+    - número que não aparece no texto do ramo é descartado (o modelo não pode inventar valores), salvo quando o
+      vizinho (±1) aparece: "entre 60 e 90" lido como 89 volta a ser 90, o número escrito;
     - faixa invertida (limite inferior ≥ superior) é trocada;
-    - ramo da descrição sem item correspondente é acusado;
+    - item sem público, sem número e sem verbo de ação no texto é informação, não regra (fora do escopo);
+    - ramo com cara de regra sem item correspondente é acusado;
     - equipe citada no texto ("televendas", "campo") é usada se o modelo não a preencheu.
     """
+    alinhar_ramos(esp, ramos)
     for it in esp.itens:
         texto = ramos.get(it.ramo, it.texto_original)
         if not it.texto_original:
@@ -234,19 +270,31 @@ def conferir_especificacao(esp: Especificacao, ramos: Dict[int, str], descricao:
         for campo in ('frequencia_dias', 'comprou_nos_ultimos_dias', 'sem_comprar_ha_mais_de_dias'):
             v = getattr(it, campo)
             if v is not None and texto and v not in disponiveis:
-                esp.avisos.append(f'"{it.nome}": o valor {v} ({campo}) não aparece no texto do ramo e foi descartado')
-                setattr(it, campo, None)
+                vizinhos = [n for n in (v + 1, v - 1) if n in disponiveis and n not in
+                            {getattr(it, c) for c in ('comprou_nos_ultimos_dias', 'sem_comprar_ha_mais_de_dias')}]
+                if campo != 'frequencia_dias' and vizinhos:
+                    esp.avisos.append(f'"{it.nome}": o valor {v} ({campo}) foi trocado por {vizinhos[0]}, '
+                                      f'o número escrito no ramo')
+                    setattr(it, campo, vizinhos[0])
+                else:
+                    esp.avisos.append(f'"{it.nome}": o valor {v} ({campo}) não aparece no texto do ramo e foi '
+                                      f'descartado')
+                    setattr(it, campo, None)
         a, b = it.sem_comprar_ha_mais_de_dias, it.comprou_nos_ultimos_dias
         if a is not None and b is not None and a >= b:
             it.sem_comprar_ha_mais_de_dias, it.comprou_nos_ultimos_dias = b, a
             esp.avisos.append(f'"{it.nome}": faixa de recência invertida ({a} e {b}); corrigida para {b} a {a} dias')
-        if it.acao == 'frequencia' and it.frequencia_dias is None and texto and 'dia' not in texto.lower():
-            pass  # a falta de frequência vira pergunta em lacunas.py
         if texto:
             conferir_filtros(it, texto, esp.avisos)
+        sem_publico = not (it.tem_recencia or it.filtros or it.exceto or it.outras_condicoes)
+        if it.acao in ('frequencia', 'nao_agendar', 'agendar') and sem_publico and texto \
+                and not _CARA_DE_REGRA.search(texto):
+            it.acao = 'fora_do_escopo'
+            esp.avisos.append(f'"{it.nome}": a linha não tem público, número nem ação; tratei como informação, '
+                              f'não como regra')
     vistos = {it.ramo for it in esp.itens}
     for n, texto in ramos.items():
-        if n not in vistos:
+        if n not in vistos and _CARA_DE_REGRA.search(texto):
             esp.avisos.append(f'o ramo {n} ("{texto}") não foi interpretado; confira se ele é uma regra')
     if esp.equipe == 'nao_informado' and descricao:
         baixo = descricao.lower()
