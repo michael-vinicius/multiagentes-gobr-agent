@@ -186,7 +186,7 @@ def revisar(esp: Especificacao, decisoes: Dict[str, Decisao]) -> Revisao:
             if a > coberto_ate and final is None:
                 rev_falta = _txt_faixa(coberto_ate, a)
                 perguntas.append(Pergunta(
-                    f'buraco:{coberto_ate}:{a}', f'Nenhuma regra cobre clientes com {rev_falta}. O que fazer com eles?',
+                    f'buraco:{coberto_ate}:{a}', f'Nenhuma regra cobre clientes na faixa "{rev_falta}". O que fazer com eles?',
                     ['não agendar', 'atender com uma frequência (informe os dias)', 'deixar sem regra'], None,
                     'clientes fora de todas as faixas não recebem parametrização', aceita_numero=True))
             coberto_ate = max(coberto_ate, b)

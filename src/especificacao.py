@@ -289,9 +289,7 @@ def conferir_especificacao(esp: Especificacao, ramos: Dict[int, str], descricao:
         sem_publico = not (it.tem_recencia or it.filtros or it.exceto or it.outras_condicoes)
         if it.acao in ('frequencia', 'nao_agendar', 'agendar') and sem_publico and texto \
                 and not _CARA_DE_REGRA.search(texto):
-            it.acao = 'fora_do_escopo'
-            esp.avisos.append(f'"{it.nome}": a linha não tem público, número nem ação; tratei como informação, '
-                              f'não como regra')
+            it.acao = 'fora_do_escopo'  # o aviso sai na revisão (lacunas.py), junto com os demais fora do escopo
     vistos = {it.ramo for it in esp.itens}
     for n, texto in ramos.items():
         if n not in vistos and _CARA_DE_REGRA.search(texto):
