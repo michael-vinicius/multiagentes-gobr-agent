@@ -265,3 +265,32 @@ def test_sem_memoria_mantem_o_comportamento_da_etapa_5():
     s = servicos([json.dumps(ESPEC), json.dumps(ESPEC_14)], conversa=False)
     r = conversar(criar_grafo(s), DESCRICAO, ['ok', 'prospects a cada 14 dias', 'ok', 'fim'], saida=calado)
     assert 'frequencia de 14 dias' in r['arquivo_gobr']
+
+
+# ---------------------------------------------------------------- avaliador
+
+def test_auxiliares_do_avaliador():
+    from avaliar_memoria import aplicar_trocas, responder_perguntas, resposta_ao_turno
+    gobr = 'parametros "A":\n    frequencia de 7 dias\n\nparametros "B":\n    frequencia de 7 dias\n'
+    assert aplicar_trocas(gobr, [['B', '7 dias', '10 dias']]) == gobr.replace('B":\n    frequencia de 7', 'B":\n    frequencia de 10')
+    with pytest.raises(ValueError):
+        aplicar_trocas(gobr, [['C', '7 dias', '10 dias']])
+    pedido = {'perguntas': [{'id': 'equipe'}, {'id': 'inadimplentes'}]}
+    assert responder_perguntas(pedido, {'inadimplentes': 'b'}) == '2b; o resto com as sugestões'
+    assert responder_perguntas(pedido, {}) == 'ok'
+    dialogo = [{'agente': 'arquivo', 'analista': 'por que X?'}, {'agente': 'porque Y', 'analista': 'fim'}]
+    assert resposta_ao_turno(dialogo, 'por que') == 'porque Y'
+
+
+def test_pergunta_sobre_ordem_e_verificada_no_simulador():
+    from agente import fato_de_ordem
+    arquivo = ('parametros "Bloqueio de rota":\n    do time("t")\n    quando data da rota na semana\n    nao agendar\n\n'
+               'parametros "Prospects":\n    do time("t")\n    quando no ciclo de vida prospect com a empresa\n'
+               '    frequencia de 7 dias\n\n'
+               'parametros "Ativos":\n    do time("t")\n    quando recencia de positivacao em 60 dias\n'
+               '    frequencia de 14 dias\n')
+    sem_efeito = fato_de_ordem(arquivo, 'por que os prospects vêm antes dos ativos?')
+    assert 'nenhum dos' in sem_efeito and 'não se sobrepõem' in sem_efeito
+    com_efeito = fato_de_ordem(arquivo, 'por que o bloqueio de rota vem antes das regras de frequência?')
+    assert 'mudariam de decisão' in com_efeito and 'com a ordem atual "nao agendar"' in com_efeito
+    assert fato_de_ordem(arquivo, 'como o GoBR decide qual regra vale?') is None

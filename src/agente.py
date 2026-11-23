@@ -626,9 +626,11 @@ def formatar_resposta(estado: Estado, conversa: bool = False) -> str:
         partes.append(f'- simulação em {sem["clientes"]} clientes sintéticos: {sem["concordancia"]:.1%} das decisões '
                       'iguais às do plano acordado')
         partes += [f'  - {d}' for d in sem['divergencias']]
-    f = rel.get('fontes', {})
-    partes.append(f'- {f.get("modelo", 0)} blocos escritos pelo modelo com RAG'
-                  + (f', {f["molde"]} pelo molde determinístico (o modelo errou duas vezes)' if f.get('molde') else '')
+    novos = [b for b in blocos if not b.get('reaproveitado')]
+    n_modelo = sum(1 for b in novos if b.get('fonte') == 'modelo')
+    n_molde = sum(1 for b in novos if b.get('fonte') == 'molde')
+    partes.append(f'- {n_modelo} blocos escritos pelo modelo com RAG'
+                  + (f', {n_molde} pelo molde determinístico (o modelo errou duas vezes)' if n_molde else '')
                   + (f'; {rel["corrigidos"]} corrigidos após a verificação' if rel.get('corrigidos') else ''))
     if rel.get('reaproveitados'):
         partes.append(f'- {rel["reaproveitados"]} blocos iguais aos da versão anterior foram reaproveitados '
@@ -813,6 +815,65 @@ trechos do manual abaixo. Regra central do GoBR: cada cliente recebe a ação da
 seguintes não o reprocessam (manual 7.6). Se a resposta não estiver nessas fontes nem na conversa, diga que não sabe."""
 
 
+_POR_QUE_ANTES = re.compile(r'por ?qu[eê]\s+(.+?)\s+(?:vem|v[eê]m|fica|ficam|est[aá]|est[aã]o|aparece|aparecem)\s+'
+                            r'(?:antes\s+(?:d[aoe]s?|que)\s+(.+?)|primeiro|no in[ií]cio)\s*\??\s*$', re.I)
+_VAZIAS_ORDEM = {'regra', 'regras', 'bloqueio', 'bloqueios', 'clientes', 'cliente', 'para', 'com', 'dos', 'das'}
+
+
+def _blocos_do_arquivo(arquivo: str) -> List[Tuple[str, str]]:
+    partes = re.split(r'(?m)^(?=parametros ")', arquivo)
+    return [(re.match(r'parametros "([^"]+)"', p).group(1), p.strip()) for p in partes if p.startswith('parametros "')]
+
+
+def _blocos_citados(trecho: str, blocos: Sequence[Tuple[str, str]]) -> List[int]:
+    from memoria import normalizar
+    t = normalizar(trecho)
+    if re.search(r'\bfrequencias?\b', t):  # "as regras de frequência"
+        return [i for i, (_, b) in enumerate(blocos) if re.search(r'^\s*frequencia', b, re.M)]
+    if re.search(r'\b(bloqueios|outras|demais)\b', t) and not re.search(r'\b(rota|baixad|inadimpl)', t):
+        return [i for i, (_, b) in enumerate(blocos) if 'nao agendar' in b]
+    palavras = [w for w in t.split() if len(w) >= 4 and w not in _VAZIAS_ORDEM]
+    achados = []
+    for i, (nome, _) in enumerate(blocos):
+        ws = normalizar(nome).split()
+        if any(p[:5] == w[:5] for p in palavras for w in ws if len(w) >= 4 and w not in _VAZIAS_ORDEM):
+            achados.append(i)
+    return achados
+
+
+def fato_de_ordem(arquivo: str, pergunta: str) -> Optional[str]:
+    """"Por que X vem antes de Y?" respondido no simulador: troca X de lugar (para depois de Y) e conta quantos
+    clientes mudariam de decisão. Devolve None se a pergunta não for desse tipo ou os blocos não forem achados."""
+    m = _POR_QUE_ANTES.search(pergunta.strip())
+    if not m:
+        return None
+    blocos = _blocos_do_arquivo(arquivo)
+    a = _blocos_citados(m.group(1), blocos)
+    b = _blocos_citados(m.group(2), blocos) if m.group(2) else [i for i in range(len(blocos)) if i not in a]
+    a = [i for i in a if i not in b]
+    if not a or not b or max(a) > min(b):
+        return None
+    ultimo = max(b)
+    nova = [i for i in range(len(blocos)) if i not in a]
+    nova = nova[:nova.index(ultimo) + 1] + a + nova[nova.index(ultimo) + 1:]
+    antes = regras_do_texto('\n\n'.join(t for _, t in blocos))
+    depois = regras_do_texto('\n\n'.join(blocos[i][1] for i in nova))
+    cmp = comparar(antes, depois)
+    nomes_a = ', '.join(f'"{blocos[i][0]}"' for i in a)
+    nomes_b = ', '.join(f'"{blocos[i][0]}"' for i in b)
+    if cmp.indeterminados and not cmp.divergencias:
+        return None
+    if not cmp.divergencias:
+        return (f'Verificado no simulador: se {nomes_a} viesse depois de {nomes_b}, nenhum dos {cmp.total} clientes '
+                'sintéticos mudaria de decisão. Os públicos não se sobrepõem; a posição é só a organização do arquivo '
+                '(bloqueios, público próprio, faixas de recência).')
+    linhas = [l.replace(': esperado ', ': com a ordem atual ').replace(', obtido ', ', com a ordem trocada ')
+              for l in cmp.resumo(3)]
+    return (f'Verificado no simulador: se {nomes_a} viesse depois de {nomes_b}, {len(cmp.divergencias)} dos '
+            f'{cmp.total} clientes sintéticos mudariam de decisão, porque a 1ª regra que pega o cliente vale:\n'
+            + '\n'.join(f'- {l}' for l in linhas))
+
+
 def responder_pergunta(servicos: Servicos, estado: Estado, pergunta: str) -> str:
     from rag import ErroGeracao
     esp = Especificacao.from_dict(estado['especificacao'])
@@ -821,9 +882,12 @@ def responder_pergunta(servicos: Servicos, estado: Estado, pergunta: str) -> str
     except Exception:
         trechos = []
     manual = '\n\n'.join(f'[manual {t.secao} {t.titulo}]\n{t.texto[:1500]}' for t in trechos)
+    fato = fato_de_ordem(estado.get('arquivo_gobr', ''), pergunta)
     system = (f'{SYSTEM_CONVERSA}\n\n<arquivo_atual>\n{estado.get("arquivo_gobr", "")}\n</arquivo_atual>\n\n'
               f'<regras>\n{formatar_entendimento(esp)}\n</regras>\n\n<ordem>\n{explicar_ordem(_plano(estado))}\n'
               f'</ordem>\n\n<manual>\n{manual}\n</manual>')
+    if fato:
+        system += f'\n\n<fato_verificado>\n{fato}\n</fato_verificado>\nBaseie a resposta no fato verificado.'
     orcamento = _janela(servicos) - estimar_tokens(system + pergunta) - RESERVA_RESPOSTA - 200
     hist = montar_historico(_historico_anterior(estado), orcamento, compactar=servicos.compactar)
     mensagens = hist.mensagens + [{'role': 'user', 'content': pergunta}]
@@ -834,9 +898,10 @@ def responder_pergunta(servicos: Servicos, estado: Estado, pergunta: str) -> str
     try:
         if antes is not None:
             servicos.backend.max_tokens = RESERVA_RESPOSTA
-        return servicos.backend.completar(system, mensagens).texto.strip()
+        texto = servicos.backend.completar(system, mensagens).texto.strip()
+        return f'{texto}\n\n{fato}' if fato else texto
     except ErroGeracao as e:
-        return f'Não consegui responder: {e}'
+        return f'Não consegui responder: {e}' + (f'\n\n{fato}' if fato else '')
     finally:
         if antes is not None:
             servicos.backend.max_tokens = antes
