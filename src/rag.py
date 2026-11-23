@@ -326,6 +326,8 @@ class BackendOllama:
                  transporte: Callable[[str, Dict, float], Dict] = _post_json):
         self.modelo, self.url, self.num_ctx = modelo, url.rstrip('/'), num_ctx
         self.max_tokens, self.timeout, self.transporte = max_tokens, timeout, transporte
+        self.uso: List[Dict[str, Any]] = []  # tokens de cada chamada (etapa 6: gestão de contexto)
+        self.etapa = ''  # rótulo da etapa que está chamando o modelo, para a telemetria
 
     def completar(self, system: str, mensagens: Mensagens) -> SaidaModelo:
         payload = {
@@ -344,6 +346,7 @@ class BackendOllama:
             raise ErroGeracao(f'sem conexão com o Ollama em {self.url} ({e}); ele está rodando?') from e
 
         entrada, saida = r.get('prompt_eval_count', 0), r.get('eval_count', 0)
+        self.uso.append({'etapa': self.etapa, 'entrada': entrada, 'saida': saida})
         # o Ollama corta o início do prompt sem avisar quando ele não cabe em num_ctx
         if entrada + saida >= self.num_ctx:
             raise ErroGeracao(f'o prompt ({entrada} tokens) não coube na janela num_ctx={self.num_ctx}')
