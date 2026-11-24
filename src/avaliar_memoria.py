@@ -128,7 +128,9 @@ def medir(cenario: Dict[str, Any], sessoes: List[Dict[str, Any]], exemplos: Opti
     for r in esp.get('respostas', []):
         s = sessoes[r['sessao']] if r['sessao'] < len(sessoes) else None
         txt = resposta_ao_turno(s['dialogo'], r['turno']) if s else None
-        ok = bool(txt) and any(k.lower() in txt.lower() for k in r['contem_algum'])
+        # uma resposta que é o arquivo regenerado não responde à pergunta (o texto padrão do arquivo fala de "ordem")
+        regenerou = bool(txt) and bool(re.match(r'(Versão \d+ do arquivo|Regras em GoBR)', txt))
+        ok = bool(txt) and not regenerou and any(k.lower() in txt.lower() for k in r['contem_algum'])
         checagens.append({'checagem': f'resposta a "{r["turno"]}…" cita {r["contem_algum"]}', 'obtido': (txt or '')[:400],
                           'ok': ok})
     for m in esp.get('mensagens', []):
@@ -203,6 +205,29 @@ def rodar_cenario(cenario: Dict[str, Any], braco: str, base_servicos: Any, exemp
         'uso': list(servicos.backend.uso)}
 
 
+def remedir(cenarios: Sequence[Dict[str, Any]], pasta: Path, exemplos: Optional[Path]) -> int:
+    linhas = []
+    for c in cenarios:
+        for braco in c['bracos']:
+            f = pasta / f'{c["id"]}-{braco}.json'
+            if not f.exists():
+                continue
+            r = json.loads(f.read_text(encoding='utf-8'))
+            sessoes = [{'resultado': {'arquivo_gobr': s['arquivo_gobr'], 'versoes': s['versoes']},
+                        'dialogo': s['dialogo'], 'perguntas': s['perguntas'], 'segundos': s['segundos']}
+                       for s in r['sessoes']]
+            r.update(medir(c, sessoes, exemplos, r['uso']))
+            f.write_text(json.dumps(r, ensure_ascii=False, indent=2), encoding='utf-8')
+            linhas.append({k: v for k, v in r.items() if k not in ('sessoes', 'uso', 'prompts_conversa')})
+            print(f'{c["id"]:30s} {braco:16s} arquivo {r["concordancia"]:6.1%}  checagens {r["checagens_ok"]}/'
+                  f'{r["checagens_total"]}')
+            for ch in r['checagens']:
+                if not ch['ok']:
+                    print(f'    ✗ {ch["checagem"]}: {str(ch.get("obtido", ""))[:120]}')
+    (pasta / 'resumo.json').write_text(json.dumps(linhas, ensure_ascii=False, indent=2), encoding='utf-8')
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description='Avalia a memória do agente com cenários de várias sessões.')
@@ -211,6 +236,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument('--so', nargs='*', help='Só os cenários cujo id contém um destes textos')
     ap.add_argument('--bracos', nargs='*', help='Só estes braços (memoria, base, sem-compactacao)')
     ap.add_argument('--saida', type=Path, default=Path('resultados/memoria'))
+    ap.add_argument('--remedir', action='store_true',
+                    help='Recalcula as métricas a partir dos diálogos já salvos em --saida, sem rodar o modelo')
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
@@ -219,6 +246,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.so:
         cenarios = [c for c in cenarios if any(s in c['id'] for s in args.so)]
 
+    if args.remedir:
+        return remedir(cenarios, args.saida, args.exemplos)
     from agente import criar_servicos
     servicos = criar_servicos('ollama')
     linhas = []
