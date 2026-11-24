@@ -400,6 +400,12 @@ def criar_grafo(servicos: Servicos, checkpointer: Any = None):
         pedido = estado.get('pedido') or ''
         n = len(versoes)
         rotulo = pedido if (pedido and n) else 'versão inicial'
+        if n and servicos.conversa and estado.get('arquivo_gobr', '') == versoes[-1].get('arquivo_gobr'):
+            # um ajuste que não muda o arquivo não é versão: senão "volta como estava" desfaria o nada, e não a
+            # última mudança de verdade (visto na avaliação, quando uma pergunta foi tomada por ajuste)
+            mensagem = (f'O pedido "{rotulo}" não mudou o arquivo: a versão {n - 1} continua valendo. Se era uma '
+                        f'pergunta, faça de novo com outras palavras.\n\n{RODAPE_CONVERSA}')
+            return {'mensagens': [mensagem], 'historico': [{'papel': 'agente', 'texto': mensagem}]}
         mensagem = formatar_resposta(estado, conversa=servicos.conversa)
         if n and servicos.conversa:
             mensagem = f'Versão {n} do arquivo (pedido: "{rotulo}"). ' + mensagem
@@ -734,6 +740,8 @@ def sem_rodape(texto: str) -> str:
 
 _PERGUNTA = re.compile(r'\?\s*$|^\s*(por ?qu[eê]|porque|como|qual|quais|quando|onde|quem|o que|explica|explique|'
                        r'me explica)\b', re.I)
+_INTERROGATIVA = re.compile(r'\s*(por ?qu[eê]|porque|como|qual|quais|quando|onde|quem|o que|explica|explique|'
+                            r'me explica)\b', re.I)
 _AJUSTE = re.compile(r'(a cada \d+|\d+\s*dias|\b(mud[ae]\w*|troc[ae]\w*|alter[ae]\w*|coloc[ae]\w*|tir[ae]\w*|'
                      r'remov[ae]\w*|inclu[ai]\w*|acrescent[ae]\w*|adicion[ae]\w*|bloque[ie]\w*|n[aã]o agend\w*|'
                      r'passa\w* a|cri[ae]\w*)\b)', re.I)
@@ -765,6 +773,11 @@ def intencao_direta(texto: str) -> Optional[Tuple[str, str]]:
     if m:
         return 'simulacao', next((g for g in m.groups() if g), t).strip().rstrip('?').strip()
     if _ANAFORA.search(t):
+        # uma pergunta com referência continua pergunta (a resposta já vê o histórico): o modelo só reescreve pedidos
+        # de mudança. Errar para "pergunta" não muda o arquivo; errar para "ajuste" muda (visto na avaliação, com
+        # "quando duas regras pegam o mesmo cliente?")
+        if _INTERROGATIVA.match(t) and not _AJUSTE.search(t):
+            return 'pergunta', t
         return None
     if _PERGUNTA.search(t):
         return 'pergunta', t

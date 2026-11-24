@@ -144,6 +144,11 @@ def test_filtragem_tira_o_arquivo_das_versoes_antigas():
     ('lembre que inadimplentes devem ser bloqueados', 'lembrar'), ('o que você lembra?', 'memoria'),
     ('esqueça a Maxlub', 'esquecer'), ('aplica', 'aplicar'),
     ('faz a mesma coisa para os inativos', None),  # depende da conversa: vai para o modelo
+    ('pode fazer o mesmo para os inativos?', None),  # pedido em forma de pergunta, com referência: modelo
+    # pergunta com palavra de referência continua pergunta (a resposta já vê o histórico)
+    ('como o GoBR decide qual regra vale quando duas pegam o mesmo cliente?', 'pergunta'),
+    ('qual a frequência daquela regra?', 'pergunta'),
+    ('muda essa regra para 10 dias', None),  # mudança com referência: modelo
 ])
 def test_intencao_direta(texto, intencao):
     r = intencao_direta(texto)
@@ -166,6 +171,18 @@ def test_desfazer_comparar_e_reaproveitar_blocos():
     assert 'regra alterada: "Prospects"' in comparacao and 'mudam de decisão' in comparacao
     # o ajuste só redigiu o bloco que mudou; os outros 3 vieram da versão anterior (e foram verificados de novo)
     assert len(s.gerador.pedidos) == 5 and r['versoes'][1]['relatorio']['reaproveitados'] == 3
+
+
+def test_ajuste_que_nao_muda_o_arquivo_nao_vira_versao():
+    # se o "ajuste" não muda nada (ex.: uma pergunta tomada por ajuste), "volta como estava" tem de desfazer a última
+    # mudança de verdade, e não o nada
+    s = servicos([json.dumps(ESPEC), json.dumps(ESPEC_14), json.dumps(ESPEC_14)])
+    r = conversar(criar_grafo(s), DESCRICAO, ['ok', 'prospects a cada 14 dias', 'coloca os prospects a cada 14 dias',
+                                              'volta como estava', 'fim'], saida=calado)
+    assert any('não mudou o arquivo: a versão 1 continua valendo' in m for m in r['mensagens'])
+    assert [v['pedido'] for v in r['versoes']] == ['versão inicial', 'prospects a cada 14 dias',
+                                                    'desfazer (volta à versão 0)']
+    assert 'prospect com a empresa\n    frequencia de 7 dias' in r['arquivo_gobr']
 
 
 def test_pergunta_usa_o_historico_compactado_e_o_arquivo():
