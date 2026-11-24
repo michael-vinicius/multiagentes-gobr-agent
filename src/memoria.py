@@ -180,7 +180,10 @@ def aplicar_lembradas(perguntas: Sequence[Any], lembradas: Dict[str, Dict[str, A
 
 # ---------------------------------------------------------------- contexto: tokens e compactação
 
-CARACTERES_POR_TOKEN = 3.0  # estimativa conservadora para português no tokenizador do qwen (calibrada no relatório)
+CARACTERES_POR_TOKEN = 3.0  # conservadora: o real no qwen fica entre 3,07 e 3,33 (calibrado contra o Ollama)
+# teto do histórico nas chamadas da conversa: o orçamento acompanha o trabalho (livro 4.12.4: 2–3× o que cada passo
+# precisa), não a janela inteira; prompts de 5–8 mil tokens custam minutos nesta GPU e pioram a atenção do modelo
+ORCAMENTO_HISTORICO = 2500
 
 
 def estimar_tokens(texto: str) -> int:
@@ -234,7 +237,7 @@ def montar_historico(historico: Sequence[Dict[str, str]], orcamento: int, compac
     msgs = [{**m, 'content': filtrar_turno(m['content'], 1200 if i < cabeca else 700)} for i, m in enumerate(msgs)]
     cab, resto = msgs[:cabeca], msgs[cabeca:]
     usado = sum(estimar_tokens(m['content']) for m in cab)
-    reserva_resumo = 250
+    reserva_resumo = max(250, orcamento // 6)
     cauda: List[Dict[str, str]] = []
     for m in reversed(resto):
         t = estimar_tokens(m['content'])
@@ -243,19 +246,47 @@ def montar_historico(historico: Sequence[Dict[str, str]], orcamento: int, compac
         cauda.insert(0, m)
         usado += t
     retirados = resto[:len(resto) - len(cauda)]
-    resumo = ''
-    if retirados:
-        pedidos = [m['content'][:90].replace('\n', ' ') for m in retirados if m['role'] == 'user']
-        resumo = (f'[{len(retirados)} turnos anteriores compactados. Pedidos do analista nesse trecho, em ordem: '
-                  + '; '.join(f'"{p}"' for p in pedidos) + ']') if pedidos else f'[{len(retirados)} turnos compactados]'
-        while estimar_tokens(resumo) > reserva_resumo and pedidos:
-            pedidos.pop(0)  # fica com os pedidos mais recentes do trecho
-            resumo = (f'[{len(retirados)} turnos anteriores compactados. Últimos pedidos do analista nesse trecho: '
-                      + '; '.join(f'"{p}"' for p in pedidos) + ']')
+    resumo = resumir_trecho(retirados, reserva_resumo) if retirados else ''
+    if resumo:
         cab = cab[:-1] + [{**cab[-1], 'content': cab[-1]['content'] + '\n\n' + resumo}] if cab else \
             [{'role': 'user', 'content': resumo}]
     juntas = _juntar(cab + cauda)
     return Historico(juntas, sum(estimar_tokens(m['content']) for m in juntas), len(retirados), resumo)
+
+
+# respostas curtas às perguntas da revisão e confirmações: não dizem nada sobre o que o analista pediu
+_TRIVIAL = re.compile(r'^\s*(ok|okay|sim|s|n[aã]o|fim|aplica|[a-d]|\d+\s*[a-d]?\s*([,;]\s*\d+\s*[:a-d][^;]*)*'
+                      r'(;?\s*o resto com as sugest\w+)?)\s*[.!]?\s*$', re.I)
+_EVENTO_ARQUIVO = re.compile(r'Regras em GoBR|Versão \d+ do arquivo|Voltei à versão|' + re.escape(MARCA_ARQUIVO))
+
+
+def resumir_trecho(retirados: Sequence[Dict[str, str]], limite: int) -> str:
+    """Linha do tempo do trecho compactado, sem modelo: os pedidos do analista, em ordem, e os momentos em que o
+    arquivo foi gerado ou mudou. Se não couber, saem os pedidos do meio (cabeça e cauda também aqui), para que o
+    primeiro pedido, que costuma ser referido depois ("o que eu perguntei primeiro?"), não se perca."""
+    eventos: List[str] = []
+    for m in retirados:
+        if m['role'] == 'user':
+            if not _TRIVIAL.match(m['content']):
+                eventos.append(f'"{m["content"][:80].replace(chr(10), " ").strip()}"')
+        elif _EVENTO_ARQUIVO.search(m['content']) and (not eventos or eventos[-1] != '[arquivo gerado ou alterado]'):
+            eventos.append('[arquivo gerado ou alterado]')
+    if not eventos:
+        return f'[{len(retirados)} turnos anteriores compactados]'
+
+    def montar(itens: Sequence[str]) -> str:
+        return (f'[{len(retirados)} turnos anteriores compactados. Linha do tempo desse trecho (pedidos do analista '
+                'entre aspas, em ordem): ' + ' → '.join(itens) + ']')
+    if estimar_tokens(montar(eventos)) <= limite:
+        return montar(eventos)
+    n = len(eventos)
+    for manter in range(n - 1, 1, -1):
+        ini = (manter + 1) // 2  # o começo tem prioridade: é ele que a cauda do histórico não cobre
+        fim = manter - ini
+        itens = eventos[:ini] + [f'(… {n - manter} itens omitidos …)'] + (eventos[n - fim:] if fim else [])
+        if estimar_tokens(montar(itens)) <= limite:
+            return montar(itens)
+    return montar(eventos[:1] + [f'(… {n - 1} itens omitidos …)'])
 
 
 def como_transcricao(h: Historico) -> str:

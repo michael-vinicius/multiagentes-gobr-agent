@@ -205,6 +205,16 @@ def rodar_cenario(cenario: Dict[str, Any], braco: str, base_servicos: Any, exemp
         'uso': list(servicos.backend.uso)}
 
 
+def manter_acordado() -> None:
+    """No Windows, impede o computador de suspender enquanto a avaliação roda (só durante este processo).
+
+    Na 1ª rodada, uma chamada ao modelo ficou 14 h aberta porque o computador suspendeu no meio dela."""
+    if sys.platform == 'win32':
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+
+
 def remedir(cenarios: Sequence[Dict[str, Any]], pasta: Path, exemplos: Optional[Path]) -> int:
     linhas = []
     for c in cenarios:
@@ -248,6 +258,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.remedir:
         return remedir(cenarios, args.saida, args.exemplos)
+    manter_acordado()
     from agente import criar_servicos
     servicos = criar_servicos('ollama')
     linhas = []

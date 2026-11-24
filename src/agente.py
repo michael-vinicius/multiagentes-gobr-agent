@@ -46,12 +46,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 
-from especificacao import (BlocoPlano, Especificacao, SCHEMA_ESPECIFICACAO, interpretar, molde, montar_arquivo,
-                           numerar_descricao, ramos_da_descricao)
+from especificacao import (CLAUSULA_FILTRO, DESCRICAO_FILTRO, BlocoPlano, Especificacao, SCHEMA_ESPECIFICACAO,
+                           interpretar, molde, montar_arquivo, numerar_descricao, ramos_da_descricao)
 from lacunas import (Decisao, Pergunta, aplicar_sugestoes, explicar_ordem, interpretar_respostas, planejar, revisar)
 from langchain_core.runnables import RunnableConfig
 
-from memoria import (OPCOES_PREFERENCIA, PREFERENCIAS, agora, aplicar_lembradas, chave_empresa, como_transcricao,
+from memoria import (ORCAMENTO_HISTORICO, OPCOES_PREFERENCIA, PREFERENCIAS, agora, aplicar_lembradas, chave_empresa, como_transcricao,
                      estimar_tokens, montar_historico, preferencia_do_texto)
 from simulador_gobr import comparar, regras_do_texto
 
@@ -713,7 +713,7 @@ _FIM = re.compile(r'^\s*(fim|sair|encerrar|encerra|tchau|obrigad[oa]\b.*|valeu.*
                   r's[oó] isso)\s*[.!]*\s*$', re.I)
 _DESFAZER = re.compile(r'\b(desfa[zç]\w*|volt[ae]\w*\s+(como|ao que|para o que|à vers[aã]o|a vers[aã]o)|'
                        r'vers[aã]o anterior|como estava)', re.I)
-_COMPARAR = re.compile(r'\b(compar\w*|o que mudou|mudou o qu[eê]|diferen[cç]as? entre)', re.I)
+_COMPARAR = re.compile(r'\b(compar\w*|o que mudou|mudou o qu[eê])|\bdiferen[cç]as? entre (as |a )?vers', re.I)
 _MEMORIA = re.compile(r'\bo que (voc[eê] )?(lembra|guardou|tem guardado|sabe sobre mim)\b|\bsua mem[oó]ria\b', re.I)
 _ESQUECER = re.compile(r'^\s*(esque[cç]a|esquece|apague|apaga|remova|remove)\b\s*(.*)$', re.I)
 _LEMBRAR = re.compile(r'^\s*(lembre|lembra|guarde|guarda|memorize|anote|anota|grave|grava)\b\s*(?:(?:que|de|disso)\b)?'
@@ -787,6 +787,13 @@ def _janela(servicos: Servicos) -> int:
     return int(getattr(servicos.backend, 'num_ctx', 8192))
 
 
+def _orcamento_historico(servicos: Servicos, fixo: str, reserva: int) -> int:
+    """Tokens para o histórico: o que sobra da janela depois das instruções e da resposta, limitado ao teto
+    ORCAMENTO_HISTORICO quando a compactação está ligada."""
+    livre = _janela(servicos) - estimar_tokens(fixo) - reserva - 200
+    return min(livre, ORCAMENTO_HISTORICO) if servicos.compactar else livre
+
+
 def _historico_anterior(estado: Estado) -> List[Dict[str, str]]:
     """Histórico sem a última mensagem do analista (ela entra à parte, como o pedido atual)."""
     h = list(estado.get('historico') or [])
@@ -798,7 +805,7 @@ def classificar_mensagem(servicos: Servicos, estado: Estado, texto: str) -> Tupl
     from rag import ErroGeracao
     esp = Especificacao.from_dict(estado['especificacao'])
     fixo = f'<regras>\n{formatar_entendimento(esp)}\n</regras>\n\nÚltima mensagem do analista: {texto}'
-    orcamento = _janela(servicos) - estimar_tokens(SYSTEM_INTENCAO + fixo) - 600 - 200
+    orcamento = _orcamento_historico(servicos, SYSTEM_INTENCAO + fixo, 600)
     hist = montar_historico(_historico_anterior(estado), orcamento, compactar=servicos.compactar)
     usuario = f'<conversa>\n{como_transcricao(hist)}\n</conversa>\n\n{fixo}'
     try:
@@ -812,7 +819,11 @@ SYSTEM_CONVERSA = """\
 Você é o agente que escreveu o arquivo de regras GoBR (Govendas) desta conversa e agora responde às perguntas do \
 analista sobre ele. Responda em português, em poucas frases, com base no arquivo atual, na explicação da ordem e nos \
 trechos do manual abaixo. Regra central do GoBR: cada cliente recebe a ação da primeira regra que o pega; regras \
-seguintes não o reprocessam (manual 7.6). Se a resposta não estiver nessas fontes nem na conversa, diga que não sabe."""
+seguintes não o reprocessam (manual 7.6). Se a resposta não estiver nessas fontes nem na conversa, diga que não sabe.
+Ao mostrar GoBR, use só cláusulas do arquivo atual ou destas, exatamente como escritas: \
+""" + '; '.join(f'{DESCRICAO_FILTRO[f]}: `quando {c}`' for f, c in CLAUSULA_FILTRO.items()) + """; \
+comprou nos últimos N dias: `quando recencia de positivacao em N dias`; está há mais de N dias sem comprar: \
+`quando fora da recencia de positivacao em N dias`."""
 
 
 _POR_QUE_ANTES = re.compile(r'por ?qu[eê]\s+(.+?)\s+(?:vem|v[eê]m|fica|ficam|est[aá]|est[aã]o|aparece|aparecem)\s+'
@@ -888,7 +899,7 @@ def responder_pergunta(servicos: Servicos, estado: Estado, pergunta: str) -> str
               f'</ordem>\n\n<manual>\n{manual}\n</manual>')
     if fato:
         system += f'\n\n<fato_verificado>\n{fato}\n</fato_verificado>\nBaseie a resposta no fato verificado.'
-    orcamento = _janela(servicos) - estimar_tokens(system + pergunta) - RESERVA_RESPOSTA - 200
+    orcamento = _orcamento_historico(servicos, system + pergunta, RESERVA_RESPOSTA)
     hist = montar_historico(_historico_anterior(estado), orcamento, compactar=servicos.compactar)
     mensagens = hist.mensagens + [{'role': 'user', 'content': pergunta}]
     if len(mensagens) >= 2 and mensagens[-2]['role'] == 'user':

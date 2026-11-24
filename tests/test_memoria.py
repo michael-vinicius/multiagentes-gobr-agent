@@ -294,3 +294,27 @@ def test_pergunta_sobre_ordem_e_verificada_no_simulador():
     com_efeito = fato_de_ordem(arquivo, 'por que o bloqueio de rota vem antes das regras de frequência?')
     assert 'mudariam de decisão' in com_efeito and 'com a ordem atual "nao agendar"' in com_efeito
     assert fato_de_ordem(arquivo, 'como o GoBR decide qual regra vale?') is None
+
+
+def test_resumo_do_trecho_compactado_guarda_o_comeco_e_marca_o_arquivo():
+    from memoria import resumir_trecho
+    trecho = [{'role': 'user', 'content': 'ok'},
+              {'role': 'assistant', 'content': 'Regras em GoBR:\n[arquivo]'}]
+    for i in range(40):
+        trecho += [{'role': 'user', 'content': f'pergunta {i}: por que a regra {i} vem antes da regra {i + 1}?'},
+                   {'role': 'assistant', 'content': 'resposta'}]
+    r = resumir_trecho(trecho, 300)
+    assert estimar_tokens(r) <= 300
+    assert r.index('[arquivo gerado ou alterado]') < r.index('pergunta 0:')  # a ordem dos eventos fica
+    assert 'pergunta 0:' in r and 'pergunta 39:' in r and 'itens omitidos' in r  # começo e fim ficam, o meio sai
+    assert '"ok"' not in r  # resposta trivial às perguntas da revisão não é pedido
+
+
+def test_teto_do_historico_so_vale_com_compactacao():
+    from agente import _orcamento_historico
+    from memoria import ORCAMENTO_HISTORICO
+    s = servicos([])
+    s.backend.num_ctx = 8192
+    assert _orcamento_historico(s, 'x' * 300, 900) == ORCAMENTO_HISTORICO
+    s.compactar = False
+    assert _orcamento_historico(s, 'x' * 300, 900) == 8192 - 100 - 900 - 200
