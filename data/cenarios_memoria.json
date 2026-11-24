@@ -90,7 +90,8 @@
     ],
     "esperado": {
       "final": {"exemplo": "RegraInfinittoDesign.gobr"},
-      "respostas": [{"sessao": 0, "turno": "qual foi a primeira pergunta", "contem_algum": ["prospect"]}]
+      "respostas": [{"sessao": 0, "turno": "qual foi a primeira pergunta", "contem_algum": ["antes dos ativos"],
+                     "nota": "endurecida em 24/11 depois da 3ª rodada: \"prospect\" também aceitava a 14ª pergunta (prospects a cada 14 dias)"}]
     }
   }
 ]

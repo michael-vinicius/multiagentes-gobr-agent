@@ -830,7 +830,9 @@ SYSTEM_CONVERSA = """\
 Você é o agente que escreveu o arquivo de regras GoBR (Govendas) desta conversa e agora responde às perguntas do \
 analista sobre ele. Responda em português, em poucas frases, com base no arquivo atual, na explicação da ordem e nos \
 trechos do manual abaixo. Regra central do GoBR: cada cliente recebe a ação da primeira regra que o pega; regras \
-seguintes não o reprocessam (manual 7.6). Se a resposta não estiver nessas fontes nem na conversa, diga que não sabe.
+seguintes não o reprocessam (manual 7.6). Se a resposta não estiver nessas fontes nem na conversa, diga que não sabe. \
+Perguntas sobre a própria conversa (o que o analista pediu, em que ordem) se respondem pela conversa: o trecho \
+compactado do início traz os pedidos do analista numerados (1º, 2º, …) na ordem em que foram feitos.
 Ao mostrar GoBR, use só cláusulas do arquivo atual ou destas, exatamente como escritas: \
 """ + '; '.join(f'{DESCRICAO_FILTRO[f]}: `quando {c}`' for f, c in CLAUSULA_FILTRO.items()) + """; \
 comprou nos últimos N dias: `quando recencia de positivacao em N dias`; está há mais de N dias sem comprar: \

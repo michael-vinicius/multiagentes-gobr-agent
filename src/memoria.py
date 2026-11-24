@@ -261,22 +261,26 @@ _EVENTO_ARQUIVO = re.compile(r'Regras em GoBR|Versão \d+ do arquivo|Voltei à v
 
 
 def resumir_trecho(retirados: Sequence[Dict[str, str]], limite: int) -> str:
-    """Linha do tempo do trecho compactado, sem modelo: os pedidos do analista, em ordem, e os momentos em que o
-    arquivo foi gerado ou mudou. Se não couber, saem os pedidos do meio (cabeça e cauda também aqui), para que o
-    primeiro pedido, que costuma ser referido depois ("o que eu perguntei primeiro?"), não se perca."""
+    """Linha do tempo do trecho compactado, sem modelo: os pedidos do analista, numerados e em ordem, e os momentos
+    em que o arquivo foi gerado ou mudou. Se não couber, saem os pedidos do meio (cabeça e cauda também aqui), para
+    que o primeiro pedido, que costuma ser referido depois ("o que eu perguntei primeiro?"), não se perca. O número
+    é a posição do pedido na conversa e não muda quando o meio sai: o modelo de 7B lê "1º" melhor do que a posição
+    numa lista (visto na avaliação: com a lista sem números, ele respondeu a 14ª pergunta como a primeira)."""
     eventos: List[str] = []
+    pedidos = 0
     for m in retirados:
         if m['role'] == 'user':
             if not _TRIVIAL.match(m['content']):
-                eventos.append(f'"{m["content"][:80].replace(chr(10), " ").strip()}"')
+                pedidos += 1
+                eventos.append(f'{pedidos}º pedido: "{m["content"][:80].replace(chr(10), " ").strip()}"')
         elif _EVENTO_ARQUIVO.search(m['content']) and (not eventos or eventos[-1] != '[arquivo gerado ou alterado]'):
             eventos.append('[arquivo gerado ou alterado]')
     if not eventos:
         return f'[{len(retirados)} turnos anteriores compactados]'
 
     def montar(itens: Sequence[str]) -> str:
-        return (f'[{len(retirados)} turnos anteriores compactados. Linha do tempo desse trecho (pedidos do analista '
-                'entre aspas, em ordem): ' + ' → '.join(itens) + ']')
+        return (f'[{len(retirados)} turnos anteriores compactados. Linha do tempo desse trecho, em ordem (pedidos do '
+                'analista numerados, entre aspas): ' + ' → '.join(itens) + ']')
     if estimar_tokens(montar(eventos)) <= limite:
         return montar(eventos)
     n = len(eventos)

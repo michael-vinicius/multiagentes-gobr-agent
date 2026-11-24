@@ -319,6 +319,8 @@ def test_resumo_do_trecho_compactado_guarda_o_comeco_e_marca_o_arquivo():
     assert r.index('[arquivo gerado ou alterado]') < r.index('pergunta 0:')  # a ordem dos eventos fica
     assert 'pergunta 0:' in r and 'pergunta 39:' in r and 'itens omitidos' in r  # começo e fim ficam, o meio sai
     assert '"ok"' not in r  # resposta trivial às perguntas da revisão não é pedido
+    # os pedidos são numerados pela posição na conversa, e o número não muda quando o meio sai
+    assert '1º pedido: "pergunta 0:' in r and '40º pedido: "pergunta 39:' in r
 
 
 def test_teto_do_historico_so_vale_com_compactacao():
