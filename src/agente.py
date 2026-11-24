@@ -447,9 +447,10 @@ def criar_grafo(servicos: Servicos, checkpointer: Any = None):
 
     def conversa(estado: Estado) -> Estado:
         out, mensagem = tratar_conversa(servicos, estado)
-        mensagem += ('\n\nPeça uma mudança, faça uma pergunta, "o que muda se …", "desfazer", "comparar", '
-                     '"o que você lembra?" ou "fim".')
-        return {**out, 'mensagens': [mensagem], 'historico': [{'papel': 'agente', 'texto': mensagem}]}
+        mensagem = sem_rodape(mensagem)
+        # o rodapé vai só para o analista: no histórico ele gasta tokens e o modelo passa a copiá-lo nas respostas
+        return {**out, 'mensagens': [f'{mensagem}\n\n{RODAPE_CONVERSA}'],
+                'historico': [{'papel': 'agente', 'texto': mensagem}]}
 
     def memorizar(estado: Estado, config: RunnableConfig) -> Estado:
         """Seleção híbrida do que lembrar (livro 4.7.3): o agente propõe, o analista confirma."""
@@ -721,6 +722,16 @@ _LEMBRAR = re.compile(r'^\s*(lembre|lembra|guarde|guarda|memorize|anote|anota|gr
 _APLICAR = re.compile(r'^\s*(aplica|aplique|aplicar|pode aplicar|confirma|confirmo|faz isso|fa[cç]a isso)\b', re.I)
 _SIMULAR = re.compile(r'^\s*(?:e\s+)?(?:o que|quem|quantos clientes)\s+(?:muda|mudaria|mudam|mudariam|acontece|'
                       r'aconteceria)\s+se\s+(.*)$|^\s*e se\s+(.*)$|^\s*simul\w*\s*:?\s*(.*)$', re.I)
+RODAPE_CONVERSA = ('Peça uma mudança, faça uma pergunta, "o que muda se …", "desfazer", "comparar", '
+                   '"o que você lembra?" ou "fim".')
+_RODAPE = re.compile(r'\s*Peça uma mudança, faça uma pergunta,[^\n]*?"fim"\.?')
+
+
+def sem_rodape(texto: str) -> str:
+    """Tira cópias do rodapé que o modelo reproduz do histórico, para ele não sair repetido."""
+    return _RODAPE.sub('', texto or '').strip()
+
+
 _PERGUNTA = re.compile(r'\?\s*$|^\s*(por ?qu[eê]|porque|como|qual|quais|quando|onde|quem|o que|explica|explique|'
                        r'me explica)\b', re.I)
 _AJUSTE = re.compile(r'(a cada \d+|\d+\s*dias|\b(mud[ae]\w*|troc[ae]\w*|alter[ae]\w*|coloc[ae]\w*|tir[ae]\w*|'

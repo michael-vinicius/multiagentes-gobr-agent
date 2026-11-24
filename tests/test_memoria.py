@@ -8,7 +8,7 @@ from typing import List
 import pytest
 from langgraph.store.memory import InMemoryStore
 
-from agente import Servicos, conversar, criar_grafo, intencao_direta, pendencias
+from agente import RODAPE_CONVERSA, Servicos, conversar, criar_grafo, intencao_direta, pendencias, sem_rodape
 from especificacao import Especificacao, Item
 from lacunas import revisar
 from memoria import (OPCOES_PREFERENCIA, MemoriaLonga, aplicar_lembradas, chave_empresa, estimar_tokens,
@@ -182,6 +182,17 @@ def test_pergunta_usa_o_historico_compactado_e_o_arquivo():
     assert 'parametros "Ativos"' in system  # o arquivo atual entra uma vez, nas instruções
     assert mensagens[-1]['content'].endswith('por que o bloqueio vem primeiro?')
     assert not any('```gobr' in m['content'] for m in mensagens)  # o arquivo das versões antigas sai do histórico
+
+
+def test_rodape_sai_uma_vez_e_fica_fora_do_historico():
+    # o modelo copia o rodapé das respostas anteriores; ele não pode sair duplicado nem voltar ao histórico
+    copiado = f'Porque a 1ª regra que pega o cliente vale.\n\n{RODAPE_CONVERSA}'
+    s = Servicos(BackendFake([json.dumps(ESPEC), copiado]), RecuperadorFake(), Gerador14())
+    r = conversar(criar_grafo(s), DESCRICAO, ['ok', 'por que o bloqueio vem primeiro?', 'fim'], saida=calado)
+    resposta = next(m for m in r['mensagens'] if m.startswith('Porque'))
+    assert resposta.count('Peça uma mudança, faça uma pergunta') == 1 and resposta.endswith(RODAPE_CONVERSA)
+    assert not any('Peça uma mudança, faça uma pergunta' in h['texto'] for h in r['historico'])
+    assert sem_rodape(f'a\n\n{RODAPE_CONVERSA}\n\nVerificado no simulador: x') == 'a\n\nVerificado no simulador: x'
 
 
 def test_simulacao_nao_aplica_e_aplica_depois():
