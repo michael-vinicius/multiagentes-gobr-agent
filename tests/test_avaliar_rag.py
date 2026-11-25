@@ -106,7 +106,10 @@ def test_clausulas_do_gabarito_existem_nas_regras_reais_ou_no_manual():
     casos = CASOS if manual.exists() else CASOS_TESTE  # parte do gabarito de ajuste só existe no manual
     for pergunta, clausulas in casos:
         assert faltando(texto, clausulas, forma=True) == [], pergunta
-    # cada alternativa individual também precisa existir (uma alternativa inventada passaria despercebida)
+    # cada alternativa individual também precisa existir (uma alternativa inventada passaria despercebida);
+    # algumas alternativas só aparecem no manual ("prospects da empresa"), então sem ele esta parte não se aplica
+    if not manual.exists():
+        return
     for pergunta, clausulas in casos:
         for grupo in clausulas:
             for alt in grupo:

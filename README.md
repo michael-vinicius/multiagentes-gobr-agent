@@ -13,6 +13,7 @@ Para isso o trabalho foi dividido em etapas:
 | 3 | Indexação do manual GoBR (extração do PDF + chunks + busca semântica) | ✅ concluída | [docs/RELATORIO_INDEXACAO_MANUAL.md](docs/RELATORIO_INDEXACAO_MANUAL.md) |
 | 4 | Fluxo básico de busca com RAG (exemplos + manual → regra GoBR conferida) | ✅ concluída | [docs/RELATORIO_RAG.md](docs/RELATORIO_RAG.md) |
 | 5 | Agente conversacional (LangGraph): imagem/texto → perguntas sobre pontos falhos → arquivo GoBR verificado | ✅ concluída | [docs/RELATORIO_AGENTE.md](docs/RELATORIO_AGENTE.md) |
+| 6 | Agente com memória de contexto: sessão retomável, conversa sobre o arquivo, memória entre sessões, gestão da janela | ✅ concluída | [docs/RELATORIO_MEMORIA.md](docs/RELATORIO_MEMORIA.md) |
 
 ## Fluxo completo
 
@@ -137,6 +138,31 @@ Resultados (`src/avaliar_agente.py`, usuário simulado, comparação semântica 
 
 Detalhes, avaliação, ressalvas e limitações no [relatório](docs/RELATORIO_AGENTE.md).
 
+## Etapa 6 — Agente com memória de contexto
+
+O agente da etapa 5 ganhou memória, nos termos do livro da disciplina (Dibia, cap. 4):
+
+| Memória | Como | Onde |
+|---|---|---|
+| curto prazo (a sessão) | estado do grafo (histórico, versões do arquivo, decisões) salvo a cada passo por um checkpointer SQLite; a sessão é retomada pelo id, inclusive no meio das perguntas | `src/agente.py` |
+| longo prazo, conhecimento | o RAG das etapas 2–4 | `src/rag.py` |
+| longo prazo, episódica e preferências | LangGraph Store em SQLite: por empresa (arquivo aprovado e decisões) e por analista (preferências e notas); o agente propõe o que guardar e o analista confirma | `src/memoria.py` |
+| gestão de contexto | compactação cabeça + cauda do histórico com teto de tokens; o arquivo das versões antigas sai do histórico; interpretação e redação não veem o chat | `src/memoria.py` |
+
+Depois do arquivo, o analista conversa: ajuste ("muda a de risco para 10 dias"), pergunta ("por que a rota vem primeiro?"), simulação ("o que muda se os inativos forem atendidos a cada 21 dias?", depois "aplica"), "volta como estava", "comparar", "lembre que …", "o que você lembra?", "esqueça …", "fim". Simulações e perguntas sobre a ordem dos blocos são respondidas com o simulador. Numa sessão nova, um pedido curto sobre uma empresa já parametrizada ("Maxlub: prospects agora a cada 7 dias") parte do arquivo aprovado, sem refazer as perguntas; as preferências do analista viram sugestões, com o motivo.
+
+Resultados (`src/avaliar_memoria.py`, usuário simulado, 5 cenários de uma ou duas sessões escritos antes de rodar o modelo, código entregue):
+
+- **Com memória:** 5/5 arquivos finais com 100% das decisões esperadas, e 6/6 checagens.
+- **Agente da etapa 5, nos mesmos cenários:** 1/4 arquivos e 1/5 checagens. "Volta como estava" não desfez, a sessão fechada recomeçou do zero, e a sessão nova da mesma empresa (ou de outra) perdeu o que tinha sido decidido.
+- **Conversa de 21 mensagens depois do arquivo:**
+  - com compactação, o maior prompt foi de 3.696 tokens, sem estouro, e "qual foi a primeira pergunta?" foi respondida certo nas 2 rodadas finais;
+  - sem compactação, o prompt chegou a 7.691–8.181 tokens numa janela de 8.192, com estouros em 3 de 3 rodadas.
+- **Correções:** as 7 rodadas da conversa longa expuseram defeitos do agente e da própria avaliação. Cada um foi corrigido e o cenário rodou de novo. Duas checagens foram endurecidas depois de ver resultados; o relatório registra as duas.
+- **Regressão da etapa 5 com o código final:** 10/10 casos com 100%. 220 testes automatizados passam. Custo zero (qwen2.5:7b local).
+
+Detalhes, decisões, avaliação e limitações no [relatório](docs/RELATORIO_MEMORIA.md).
+
 ## Como executar
 
 Requer Python 3.10+.
@@ -186,6 +212,13 @@ python src/transcrever_entrada.py caminho/Regra.png    # só a transcrição da 
 python src/avaliar_agente.py --exemplos <pasta com .pdf + .gobr> --cenarios data/cenarios_agente.json
 python src/avaliar_agente.py --exemplos <pasta> --imagem   # mesmos exemplos enviados como imagem (OCR)
 
+# Etapa 6 — memória (bancos SQLite em memoria/; o id da sessão aparece no início)
+python src/agente.py caminho/RegraCliente.pdf --analista ana
+python src/agente.py --sessao <id da sessão> --analista ana          # retoma uma sessão interrompida
+python src/agente.py "Maxlub: prospects agora a cada 7 dias" --analista ana
+python src/agente.py regra.pdf --sem-memoria                         # comportamento da etapa 5
+python src/avaliar_memoria.py --exemplos <pasta com .pdf + .gobr>    # cenários de memória × linha de base
+
 # Testes (os de integração são pulados se o índice do manual não existir)
 pip install -r requirements-dev.txt
 python -m pytest
@@ -222,11 +255,12 @@ print(resp.texto, resp.blocos_gobr, resp.citacoes, resp.dsl_valida, resp.tentati
 ## Estrutura do repositório
 
 ```text
-data/           datasets gerados na etapa 1 e os cenários de avaliação do agente (cenarios_agente.json)
+data/           datasets gerados na etapa 1 e os cenários de avaliação do agente (cenarios_agente.json,
+                cenarios_memoria.json)
 docs/           relatórios de cada atividade
 index/          índice vetorial das explicações (etapa 2)
 index/manual/   índice do manual (etapa 3), gerado localmente e fora do controle de versão
 src/            geração, extração, indexação, busca (vetorial e híbrida), RAG, catálogo, agente (LangGraph),
-                transcrição de imagens, especificação, revisão de lacunas, simulador semântico e avaliações
+                transcrição de imagens, especificação, revisão de lacunas, simulador semântico, memória e avaliações
 tests/          testes automatizados (pytest)
 ```

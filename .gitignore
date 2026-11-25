@@ -13,3 +13,6 @@ index/manual/
 
 # saídas das avaliações (derivadas dos exemplos de clientes)
 resultados/
+
+# memória do agente (sessões e memória de longo prazo, SQLite local)
+memoria/

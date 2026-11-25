@@ -59,6 +59,7 @@ class Decisao:
     opcao: Optional[int] = None
     numero: Optional[int] = None
     texto: str = ''
+    explicita: bool = False  # o analista respondeu (e não só aceitou a sugestão): candidata a preferência lembrada
 
 
 # ---------------------------------------------------------------- utilidades das faixas
@@ -243,9 +244,9 @@ def interpretar_respostas(texto: str, perguntas: Sequence[Pergunta]) -> Tuple[Di
         if m.group(2):
             i = ord(m.group(2)) - ord('a')
             if 0 <= i < len(p.opcoes):
-                decisoes[p.id] = Decisao(opcao=i)
+                decisoes[p.id] = Decisao(opcao=i, explicita=True)
         elif m.group(3) and p.aceita_numero:
-            decisoes[p.id] = Decisao(numero=int(m.group(3)))
+            decisoes[p.id] = Decisao(numero=int(m.group(3)), explicita=True)
     aceite = bool(_ACEITE.match(texto)) or bool(re.search(r'\b(resto|demais|outras)\b.*\bsugest', texto.lower()))
     return decisoes, aceite
 

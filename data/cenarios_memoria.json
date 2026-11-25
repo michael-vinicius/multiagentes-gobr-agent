@@ -1,0 +1,97 @@
+[
+  {
+    "id": "A-referencia-desfazer",
+    "objetivo": "memória de curto prazo na mesma sessão: um ajuste com referência ('a de risco'), 'volta como estava' e uma pergunta sobre a ordem dos blocos",
+    "bracos": ["memoria", "base"],
+    "sessoes": [
+      {"entrada": "exemplo:RegraMaxlub.pdf", "thread": "A1",
+       "perguntas": {}, "conversa": ["muda a de risco para 10 dias", "volta como estava",
+                                     "por que o bloqueio de rota vem antes das regras de frequência?", "fim"],
+       "memoria": "não"}
+    ],
+    "esperado": {
+      "final": {"exemplo": "RegraMaxlub.gobr"},
+      "versoes": [{"sessao": 0, "versao": 1, "decisoes": [{"cliente": {"dias_sem_compra": 75}, "acao": "frequencia 10"}]}],
+      "respostas": [{"sessao": 0, "turno": "por que o bloqueio de rota", "contem_algum": ["primeira", "7.6", "ordem", "antes"]}]
+    }
+  },
+  {
+    "id": "B-retomar-sessao",
+    "objetivo": "o programa fecha com a primeira pergunta pendente e é aberto de novo; a sessão continua de onde parou",
+    "bracos": ["memoria", "base"],
+    "sessoes": [
+      {"entrada": "exemplo:RegraInfinittoDesign.pdf", "thread": "B1", "reiniciar_na_pergunta": true,
+       "perguntas": {}, "conversa": ["fim"], "memoria": "não"}
+    ],
+    "esperado": {
+      "final": {"exemplo": "RegraInfinittoDesign.gobr"},
+      "interpretacoes_max": 1
+    }
+  },
+  {
+    "id": "C-mesma-empresa",
+    "objetivo": "memória de longo prazo episódica: numa sessão nova, um pedido curto sobre a mesma empresa parte do arquivo aprovado antes, sem refazer as perguntas",
+    "bracos": ["memoria", "base"],
+    "sessoes": [
+      {"entrada": "exemplo:RegraMaxlub.pdf", "thread": "C1", "perguntas": {}, "conversa": ["fim"], "memoria": "sim",
+       "so_bracos": ["memoria"]},
+      {"entrada": "Maxlub: prospects agora a cada 7 dias", "thread": "C2", "recordar": "a",
+       "perguntas": {}, "conversa": ["fim"], "memoria": "sim"}
+    ],
+    "esperado": {
+      "final": {"exemplo": "RegraMaxlub.gobr", "trocas": [["Clientes prospects", "frequencia de 14 dias", "frequencia de 7 dias"]]},
+      "perguntas_max_ultima_sessao": 0
+    }
+  },
+  {
+    "id": "D-preferencia-entre-empresas",
+    "objetivo": "memória de longo prazo de preferências: o analista bloqueia inadimplentes numa empresa e pede para lembrar; em outra empresa, a sugestão já vem assim e com o motivo",
+    "bracos": ["memoria", "base"],
+    "sessoes": [
+      {"entrada": "exemplo:RegraInfinittoDesign.pdf", "thread": "D1", "perguntas": {"inadimplentes": "b"},
+       "conversa": ["lembre que inadimplentes devem sempre ser bloqueados", "fim"], "memoria": "sim",
+       "so_bracos": ["memoria"]},
+      {"entrada": "Regras do televendas da Distribuidora Horizonte: clientes que compraram nos últimos 30 dias devem ser atendidos a cada 14 dias. Clientes há mais de 30 dias sem comprar, a cada 21 dias. Prospects a cada 30 dias. Não agendar clientes baixados na Receita.",
+       "thread": "D2", "perguntas": {}, "conversa": ["fim"], "memoria": "não"}
+    ],
+    "esperado": {
+      "final": {"gobr": "parametros \"Baixados\":\n    do time(\"televendas\")\n    quando status na receita federal definido como baixada\n    nao agendar\n\nparametros \"Inadimplentes\":\n    do time(\"televendas\")\n    quando inadimplentes\n    nao agendar\n\nparametros \"Prospects\":\n    do time(\"televendas\")\n    quando no ciclo de vida prospect com a empresa\n    frequencia de 30 dias\n\nparametros \"Ativos\":\n    do time(\"televendas\")\n    quando recencia de positivacao em 30 dias\n    frequencia de 14 dias\n\nparametros \"Inativos\":\n    do time(\"televendas\")\n    quando fora da recencia de positivacao em 30 dias\n    frequencia de 21 dias\n"},
+      "mensagens": [{"sessao": 1, "contem": "lembrado: você escolheu"}]
+    }
+  },
+  {
+    "id": "E-conversa-longa",
+    "objetivo": "gestão de contexto: 21 turnos depois do arquivo (perguntas, simulações, aplicar, desfazer, comparar); o maior prompt com e sem compactação, e se o agente ainda lembra a 1ª pergunta",
+    "bracos": ["memoria", "sem-compactacao"],
+    "sessoes": [
+      {"entrada": "exemplo:RegraInfinittoDesign.pdf", "thread": "E1", "perguntas": {}, "memoria": "não",
+       "conversa": [
+         "por que os prospects vêm antes dos ativos?",
+         "o que muda se os inativos forem atendidos a cada 21 dias?",
+         "aplica",
+         "por que o bloqueio de baixados vem primeiro?",
+         "compara",
+         "qual a frequência dos clientes em risco de inatividade?",
+         "o que muda se o risco de inatividade for atendido a cada 10 dias?",
+         "quantas regras tem o arquivo agora?",
+         "como o GoBR decide qual regra vale quando duas pegam o mesmo cliente?",
+         "volta como estava",
+         "explica a regra dos ativos",
+         "o que acontece com um cliente que está há 200 dias sem comprar?",
+         "por que não há regra para inadimplentes?",
+         "o que muda se os prospects forem atendidos a cada 14 dias?",
+         "qual é a diferença entre recência em 60 dias e fora da recência em 60 dias?",
+         "como seria um bloqueio para clientes da rota da semana?",
+         "quais regras usam recência de positivação?",
+         "o que é o time televendas no arquivo?",
+         "explica de novo por que a ordem das regras importa",
+         "qual foi a primeira pergunta que eu fiz depois que você gerou o arquivo?",
+         "fim"]}
+    ],
+    "esperado": {
+      "final": {"exemplo": "RegraInfinittoDesign.gobr"},
+      "respostas": [{"sessao": 0, "turno": "qual foi a primeira pergunta", "contem_algum": ["antes dos ativos"],
+                     "nota": "endurecida em 24/11 depois da 3ª rodada: \"prospect\" também aceitava a 14ª pergunta (prospects a cada 14 dias)"}]
+    }
+  }
+]

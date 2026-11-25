@@ -12,6 +12,7 @@ import re
 import urllib.error
 from typing import Any, Dict, List
 
+from memoria import registrar_uso
 from rag import BackendOllama, ErroGeracao
 
 
@@ -67,6 +68,7 @@ def pedir_json(backend: Any, system: str, usuario: str, schema: Dict, tentativas
                     'options': {'num_ctx': backend.num_ctx, 'num_predict': backend.max_tokens, 'temperature': 0},
                 }
                 r = backend.transporte(f'{backend.url}/api/chat', payload, backend.timeout)
+                registrar_uso(backend, r.get('prompt_eval_count', 0), r.get('eval_count', 0))
                 if r.get('prompt_eval_count', 0) + r.get('eval_count', 0) >= backend.num_ctx:
                     raise ErroGeracao(f'o prompt não coube na janela num_ctx={backend.num_ctx}')
                 if r.get('done_reason') == 'length':
